@@ -1,0 +1,904 @@
+product,category,date,predicted_sales,lower_bound,upper_bound,type,MAE,Error_%
+Affogato,Cold Coffee Drinks,10/16/2022,0.067000897,0,6.875588099,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/17/2022,0.062500671,0,6.767278444,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/18/2022,0.068017952,0,6.942645183,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/19/2022,0.061412101,0,6.717550214,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/20/2022,0.086964741,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/21/2022,0.10460995,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+Affogato,Cold Coffee Drinks,10/22/2022,0.092306937,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+Americano,Espresso Drinks,10/16/2022,0.772088748,0,3.581840085,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/17/2022,1.04041939,0,3.743025476,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/18/2022,1.381920745,0,4.32580953,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/19/2022,1.381958793,0,4.294512118,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/20/2022,1.430779144,0,4.235432038,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/21/2022,2.38204786,0,5.157501976,high_item_model,2.451270897,72.69286108
+Americano,Espresso Drinks,10/22/2022,1.27504715,0,4.041261865,high_item_model,2.451270897,72.69286108
+Apple Muffin,Bakery,10/16/2022,0.112237082,0,8.606133769,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/17/2022,0.129686375,0,9.035584777,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/18/2022,0.12977547,0,9.271938936,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/19/2022,0.126390662,0,8.99773003,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/20/2022,0.179424938,0,10.69881842,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/21/2022,0.143054095,0,9.701790889,category_distribution,6.736333354,66.35360477
+Apple Muffin,Bakery,10/22/2022,0.156785337,0,9.898608959,category_distribution,6.736333354,66.35360477
+Asfahani,Cold Drinks,10/16/2022,0.701006224,0,14.64728763,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/17/2022,0.611339916,0,14.00312011,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/18/2022,0.66269896,0,15.34468989,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/19/2022,0.787928414,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/20/2022,0.899726891,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/21/2022,0.928704002,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Asfahani,Cold Drinks,10/22/2022,0.822533599,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Baby chino,Hot Drinks,10/16/2022,0.094853164,0,15.87014043,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/17/2022,0.073128799,0,13.97345421,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/18/2022,0.116121559,0,16.72883397,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/19/2022,0.086550567,0,15.55970319,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/20/2022,0.130760812,0,17.40504979,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/21/2022,0.164246739,0,20.41687122,category_distribution,19.77386391,78.14413574
+Baby chino,Hot Drinks,10/22/2022,0.153396517,0,18.62664929,category_distribution,19.77386391,78.14413574
+Banana Split Waffle,Hot Sweets,10/16/2022,0.023604416,0,14.14978436,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/17/2022,0.01574936,0,11.81706701,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/18/2022,0.024216036,0,13.6568393,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/19/2022,0.023061859,0,13.69568737,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/20/2022,0.025474771,0,14.15172253,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/21/2022,0.051883464,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Banana Split Waffle,Hot Sweets,10/22/2022,0.027582457,0,15.10234563,category_distribution,10.69046787,65.83152902
+Black Tea - 1 Liter pot,Hot Drinks,10/16/2022,0.001156746,0,15.87014043,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/17/2022,0.000891815,0,13.97345421,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/18/2022,0.001416117,0,16.72883397,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/19/2022,0.001055495,0,15.55970319,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/20/2022,0.001594644,0,17.40504979,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/21/2022,0.002003009,0,20.41687122,category_distribution,19.77386391,78.14413574
+Black Tea - 1 Liter pot,Hot Drinks,10/22/2022,0.001870689,0,18.62664929,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/16/2022,0.107577369,0,15.87014043,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/17/2022,0.08293876,0,13.97345421,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/18/2022,0.131698841,0,16.72883397,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/19/2022,0.098161009,0,15.55970319,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/20/2022,0.148301897,0,17.40504979,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/21/2022,0.186279838,0,20.41687122,category_distribution,19.77386391,78.14413574
+Black Tea - Large Cup,Hot Drinks,10/22/2022,0.173974098,0,18.62664929,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/16/2022,0.137652763,0,15.87014043,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/17/2022,0.10612594,0,13.97345421,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/18/2022,0.168517872,0,16.72883397,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/19/2022,0.125603872,0,15.55970319,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/20/2022,0.189762642,0,17.40504979,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/21/2022,0.238358072,0,20.41687122,category_distribution,19.77386391,78.14413574
+Black Tea - Large Teapot,Hot Drinks,10/22/2022,0.222612018,0,18.62664929,category_distribution,19.77386391,78.14413574
+Black Tea - Small Cup,Hot Drinks,10/16/2022,2.518958472,0,6.08335301,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/17/2022,3.105098493,0,7.055000835,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/18/2022,1.786830224,0,5.265831384,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/19/2022,2.665964806,0,6.185173149,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/20/2022,2.34874365,0,5.84634652,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/21/2022,2.690744071,0,6.212455379,high_item_model,2.228589862,52.50604386
+Black Tea - Small Cup,Hot Drinks,10/22/2022,3.059278259,0,6.755558578,high_item_model,2.228589862,52.50604386
+Black Tea - Small Teapot,Hot Drinks,10/16/2022,0.452287649,0,15.87014043,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/17/2022,0.348699518,0,13.97345421,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/18/2022,0.55370158,0,16.72883397,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/19/2022,0.412698436,0,15.55970319,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/20/2022,0.623505824,0,17.40504979,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/21/2022,0.783176522,0,20.41687122,category_distribution,19.77386391,78.14413574
+Black Tea - Small Teapot,Hot Drinks,10/22/2022,0.731439489,0,18.62664929,category_distribution,19.77386391,78.14413574
+Blue Mojito,Cold Drinks,10/16/2022,2.928524172,0,6.706774108,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/17/2022,2.367476351,0,5.914636147,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/18/2022,2.928362501,0,6.702980342,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/19/2022,3.099009493,0,6.8396294,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/20/2022,3.879405057,0.257657312,7.623917356,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/21/2022,4.78175097,1.010052011,8.340928112,high_item_model,1.8157796,51.51147803
+Blue Mojito,Cold Drinks,10/22/2022,3.853271009,0.382678583,7.430911303,high_item_model,1.8157796,51.51147803
+Blueberry Smoothie,Cold Drinks,10/16/2022,0.048554544,0,14.64728763,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/17/2022,0.04234389,0,14.00312011,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/18/2022,0.045901227,0,15.34468989,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/19/2022,0.054575128,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/20/2022,0.062318746,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/21/2022,0.064325818,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Blueberry Smoothie,Cold Drinks,10/22/2022,0.056972024,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Blueberry cheesecake,Sweets,10/16/2022,0.628971855,0,18.07429114,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/17/2022,0.497687996,0,16.87794988,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/18/2022,0.64632761,0,19.01422819,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/19/2022,0.646760426,0,19.21328758,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/20/2022,0.908593322,0,22.05367507,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/21/2022,1.07779811,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Blueberry cheesecake,Sweets,10/22/2022,0.849439015,0,21.14025603,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/16/2022,0.044138376,0,18.07429114,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/17/2022,0.034925473,0,16.87794988,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/18/2022,0.045356323,0,19.01422819,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/19/2022,0.045386697,0,19.21328758,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/20/2022,0.063760935,0,22.05367507,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/21/2022,0.075634955,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Candy Cake,Sweets,10/22/2022,0.059609755,0,21.14025603,category_distribution,16.70617491,68.69555739
+Cappuccino,Espresso Drinks,10/16/2022,2.264363313,0,7.467967019,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/17/2022,3.194284481,0,8.869489563,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/18/2022,2.929180106,0,8.615203144,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/19/2022,3.200550245,0,9.356357104,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/20/2022,4.081580914,0,9.244655874,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/21/2022,5.230836224,0,11.25018525,high_item_model,10.10414962,78.49504661
+Cappuccino,Espresso Drinks,10/22/2022,4.576778742,0,10.38133083,high_item_model,10.10414962,78.49504661
+Caramel Macchiato,Espresso Drinks,10/16/2022,0.195949793,0,4.041176281,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/17/2022,0.177600279,0,3.782592646,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/18/2022,0.154074482,0,3.628162997,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/19/2022,0.156317405,0,3.859096551,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/20/2022,0.235960632,0,4.035094437,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/21/2022,0.423939745,0,4.855007687,category_distribution,3.087697894,77.19244734
+Caramel Macchiato,Espresso Drinks,10/22/2022,0.372843611,0,4.653509002,category_distribution,3.087697894,77.19244734
+Caramel Muffin,Bakery,10/16/2022,0.136636448,0,8.606133769,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/17/2022,0.157879065,0,9.035584777,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/18/2022,0.157987529,0,9.271938936,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/19/2022,0.153866893,0,8.99773003,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/20/2022,0.218430359,0,10.69881842,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/21/2022,0.174152811,0,9.701790889,category_distribution,6.736333354,66.35360477
+Caramel Muffin,Bakery,10/22/2022,0.190869106,0,9.898608959,category_distribution,6.736333354,66.35360477
+Carmen,Sweets,10/16/2022,0.037832894,0,18.07429114,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/17/2022,0.02993612,0,16.87794988,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/18/2022,0.038876849,0,19.01422819,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/19/2022,0.038902883,0,19.21328758,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/20/2022,0.05465223,0,22.05367507,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/21/2022,0.064829961,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Carmen,Sweets,10/22/2022,0.051094076,0,21.14025603,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/16/2022,0.034680152,0,18.07429114,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/17/2022,0.027441443,0,16.87794988,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/18/2022,0.035637111,0,19.01422819,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/19/2022,0.035660976,0,19.21328758,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/20/2022,0.050097877,0,22.05367507,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/21/2022,0.059427465,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Carrot Cake,Sweets,10/22/2022,0.046836236,0,21.14025603,category_distribution,16.70617491,68.69555739
+Cheddar cheese pastry,Bakery,10/16/2022,0.02602599,0,8.606133769,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/17/2022,0.030072203,0,9.035584777,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/18/2022,0.030092863,0,9.271938936,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/19/2022,0.02930798,0,8.99773003,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/20/2022,0.041605783,0,10.69881842,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/21/2022,0.033171964,0,9.701790889,category_distribution,6.736333354,66.35360477
+Cheddar cheese pastry,Bakery,10/22/2022,0.03635602,0,9.898608959,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/16/2022,0.819818688,0,8.606133769,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/17/2022,0.947274389,0,9.035584777,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/18/2022,0.947925173,0,9.271938936,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/19/2022,0.923201355,0,8.99773003,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/20/2022,1.310582152,0,10.69881842,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/21/2022,1.044916866,0,9.701790889,category_distribution,6.736333354,66.35360477
+Cheese Croissant,Bakery,10/22/2022,1.145214636,0,9.898608959,category_distribution,6.736333354,66.35360477
+Cheese Saffron,Sweets,10/16/2022,0.398821752,0,18.07429114,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/17/2022,0.315576599,0,16.87794988,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/18/2022,0.40982678,0,19.01422819,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/19/2022,0.410101223,0,19.21328758,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/20/2022,0.57612559,0,22.05367507,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/21/2022,0.683415844,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Cheese Saffron,Sweets,10/22/2022,0.538616719,0,21.14025603,category_distribution,16.70617491,68.69555739
+Chemex - Colombian,Dripp Coffee Drinks,10/16/2022,0.450242163,0,6.955575594,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/17/2022,0.36417805,0,6.269539733,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/18/2022,0.278124893,0,5.742015026,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/19/2022,0.588528887,0,7.516603503,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/20/2022,0.560404625,0,7.414832468,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/21/2022,0.910911329,0.775415753,9.145884333,category_distribution,3.413892931,67.08523227
+Chemex - Colombian,Dripp Coffee Drinks,10/22/2022,0.696608294,0,8.07691945,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/16/2022,0.114061348,0,6.955575594,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/17/2022,0.092258439,0,6.269539733,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/18/2022,0.070458306,0,5.742015026,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/19/2022,0.149093985,0,7.516603503,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/20/2022,0.141969172,0,7.414832468,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/21/2022,0.230764203,0.775415753,9.145884333,category_distribution,3.413892931,67.08523227
+Chemex - Java,Dripp Coffee Drinks,10/22/2022,0.176474101,0,8.07691945,category_distribution,3.413892931,67.08523227
+Chocolate Crepe,Hot Sweets,10/16/2022,0.900339861,0,14.14978436,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/17/2022,0.600725588,0,11.81706701,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/18/2022,0.923668802,0,13.6568393,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/19/2022,0.879645191,0,13.69568737,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/20/2022,0.971680569,0,14.15172253,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/21/2022,1.978983557,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Chocolate Crepe,Hot Sweets,10/22/2022,1.052073715,0,15.10234563,category_distribution,10.69046787,65.83152902
+Chocolate Crush,Cold Drinks,10/16/2022,0.479476119,0,14.64728763,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/17/2022,0.418145917,0,14.00312011,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/18/2022,0.453274613,0,15.34468989,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/19/2022,0.538929391,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/20/2022,0.615397614,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/21/2022,0.635217456,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Chocolate Crush,Cold Drinks,10/22/2022,0.562598739,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Chocolate French Toast,Hot Sweets,10/16/2022,0.414763307,0,14.14978436,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/17/2022,0.276738754,0,11.81706701,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/18/2022,0.425510347,0,13.6568393,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/19/2022,0.405229807,0,13.69568737,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/20/2022,0.447628127,0,14.15172253,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/21/2022,0.911666583,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Chocolate French Toast,Hot Sweets,10/22/2022,0.484663172,0,15.10234563,category_distribution,10.69046787,65.83152902
+Chocolate Horn bread,Bakery,10/16/2022,0.061811726,0,8.606133769,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/17/2022,0.071421482,0,9.035584777,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/18/2022,0.071470549,0,9.271938936,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/19/2022,0.069606451,0,8.99773003,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/20/2022,0.098813734,0,10.69881842,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/21/2022,0.078783414,0,9.701790889,category_distribution,6.736333354,66.35360477
+Chocolate Horn bread,Bakery,10/22/2022,0.086345548,0,9.898608959,category_distribution,6.736333354,66.35360477
+Chocolate Mousse,Sweets,10/16/2022,0.048867487,0,18.07429114,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/17/2022,0.038667488,0,16.87794988,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/18/2022,0.05021593,0,19.01422819,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/19/2022,0.050249557,0,19.21328758,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/20/2022,0.070592464,0,22.05367507,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/21/2022,0.0837387,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Chocolate Mousse,Sweets,10/22/2022,0.065996515,0,21.14025603,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/16/2022,0.206504544,0,18.07429114,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/17/2022,0.163401322,0,16.87794988,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/18/2022,0.212202799,0,19.01422819,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/19/2022,0.212344902,0,19.21328758,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/20/2022,0.298310088,0,22.05367507,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/21/2022,0.35386354,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Chocolate brawny,Sweets,10/22/2022,0.278888499,0,21.14025603,category_distribution,16.70617491,68.69555739
+Chocolate waffle,Hot Sweets,10/16/2022,1.070947621,0,3.921127945,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/17/2022,1.217293029,0,4.183140216,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/18/2022,1.19285629,0,4.069628526,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/19/2022,1.509980949,0,4.717562281,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/20/2022,2.095471498,0,5.124453351,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/21/2022,3.266493587,0.370233259,6.061607914,high_item_model,2.141169263,63.77950995
+Chocolate waffle,Hot Sweets,10/22/2022,2.067741679,0,5.067969122,high_item_model,2.141169263,63.77950995
+Chocolate with ice cream Waffle,Hot Sweets,10/16/2022,0.025290446,0,14.14978436,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/17/2022,0.016874314,0,11.81706701,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/18/2022,0.025945753,0,13.6568393,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/19/2022,0.024709135,0,13.69568737,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/20/2022,0.027294398,0,14.15172253,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/21/2022,0.055589426,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Chocolate with ice cream Waffle,Hot Sweets,10/22/2022,0.029552632,0,15.10234563,category_distribution,10.69046787,65.83152902
+Cortado,Espresso Drinks,10/16/2022,0.36739899,0,2.909006237,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/17/2022,0.856015113,0,3.321263102,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/18/2022,0.686992256,0,3.193147289,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/19/2022,1.029437725,0,3.552066707,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/20/2022,0.787328207,0,3.168799683,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/21/2022,2.006579277,0,4.600958531,high_item_model,3.040399027,79.62949833
+Cortado,Espresso Drinks,10/22/2022,1.62790233,0,4.271055936,high_item_model,3.040399027,79.62949833
+Date cake,Sweets,10/16/2022,1.076661095,0,18.07429114,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/17/2022,0.851932083,0,16.87794988,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/18/2022,1.106370319,0,19.01422819,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/19/2022,1.107111206,0,19.21328758,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/20/2022,1.555311375,0,22.05367507,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/21/2022,1.844952654,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Date cake,Sweets,10/22/2022,1.454052249,0,21.14025603,category_distribution,16.70617491,68.69555739
+Double Chocolate waffle,Hot Sweets,10/16/2022,0.633947168,0,14.14978436,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/17/2022,0.422982811,0,11.81706701,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/18/2022,0.650373539,0,13.6568393,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/19/2022,0.61937564,0,13.69568737,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/20/2022,0.684179577,0,14.15172253,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/21/2022,1.393441606,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Double Chocolate waffle,Hot Sweets,10/22/2022,0.740785987,0,15.10234563,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/16/2022,0.293369168,0,14.14978436,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/17/2022,0.195742045,0,11.81706701,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/18/2022,0.300970733,0,13.6568393,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/19/2022,0.286625961,0,13.69568737,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/20/2022,0.316615017,0,14.15172253,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/21/2022,0.644837339,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Double Fruites waffle,Hot Sweets,10/22/2022,0.342810536,0,15.10234563,category_distribution,10.69046787,65.83152902
+Esspresso,Espresso Drinks,10/16/2022,0.249626325,0,3.17723178,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/17/2022,0.636828431,0,3.396833491,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/18/2022,0.44249047,0,3.358672609,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/19/2022,0.369307712,0,3.260995644,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/20/2022,1.410734058,0,4.315704083,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/21/2022,1.410241987,0,4.245071608,high_item_model,5.356293202,95.13107617
+Esspresso,Espresso Drinks,10/22/2022,1.190836834,0,4.286930456,high_item_model,5.356293202,95.13107617
+Flat White,Espresso Drinks,10/16/2022,0.992388915,0,5.129028629,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/17/2022,1.210761391,0,5.311488662,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/18/2022,1.890530422,0,6.237313465,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/19/2022,1.258951701,0,5.354498358,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/20/2022,1.453033052,0,5.421538291,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/21/2022,2.594192921,0,6.511635854,high_item_model,6.72805016,90.49424192
+Flat White,Espresso Drinks,10/22/2022,1.550006572,0,5.671983066,high_item_model,6.72805016,90.49424192
+Fondue,Hot Sweets,10/16/2022,0.106219871,0,14.14978436,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/17/2022,0.07087212,0,11.81706701,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/18/2022,0.108972162,0,13.6568393,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/19/2022,0.103778365,0,13.69568737,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/20/2022,0.114636472,0,14.15172253,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/21/2022,0.233475588,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Fondue,Hot Sweets,10/22/2022,0.124121056,0,15.10234563,category_distribution,10.69046787,65.83152902
+Frappuccino Snickers,Cold Drinks,10/16/2022,0.32774317,0,14.64728763,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/17/2022,0.285821259,0,14.00312011,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/18/2022,0.30983328,0,15.34468989,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/19/2022,0.368382115,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/20/2022,0.420651534,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/21/2022,0.434199274,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Frappuccino Snickers,Cold Drinks,10/22/2022,0.384561163,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+French Coffee - Large,Hot Drinks,10/16/2022,0.054367058,0,15.87014043,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/17/2022,0.041915287,0,13.97345421,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/18/2022,0.066557479,0,16.72883397,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/19/2022,0.049608252,0,15.55970319,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/20/2022,0.07494827,0,17.40504979,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/21/2022,0.094141423,0,20.41687122,category_distribution,19.77386391,78.14413574
+French Coffee - Large,Hot Drinks,10/22/2022,0.087922394,0,18.62664929,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/16/2022,0.305380919,0,15.87014043,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/17/2022,0.235439061,0,13.97345421,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/18/2022,0.373854775,0,16.72883397,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/19/2022,0.278650606,0,15.55970319,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/20/2022,0.420986029,0,17.40504979,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/21/2022,0.528794378,0,20.41687122,category_distribution,19.77386391,78.14413574
+French Coffee - Small,Hot Drinks,10/22/2022,0.493861957,0,18.62664929,category_distribution,19.77386391,78.14413574
+French Toast,Hot Sweets,10/16/2022,0.118022079,0,14.14978436,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/17/2022,0.0787468,0,11.81706701,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/18/2022,0.12108018,0,13.6568393,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/19/2022,0.115309295,0,13.69568737,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/20/2022,0.127373857,0,14.15172253,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/21/2022,0.25941732,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+French Toast,Hot Sweets,10/22/2022,0.137912285,0,15.10234563,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/16/2022,0.431623604,0,14.14978436,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/17/2022,0.287988297,0,11.81706701,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/18/2022,0.442807516,0,13.6568393,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/19/2022,0.421702564,0,13.69568737,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/20/2022,0.465824393,0,14.15172253,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/21/2022,0.9487262,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Fruites Crepe,Hot Sweets,10/22/2022,0.504364927,0,15.10234563,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/16/2022,0.726678802,0,14.14978436,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/17/2022,0.484855296,0,11.81706701,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/18/2022,0.745507966,0,13.6568393,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/19/2022,0.7099758,0,13.69568737,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/20/2022,0.784259036,0,14.15172253,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/21/2022,1.5972695,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Fruites waffle,Hot Sweets,10/22/2022,0.849145639,0,15.10234563,category_distribution,10.69046787,65.83152902
+Galaxy Fondo,Sweets,10/16/2022,0.61636089,0,18.07429114,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/17/2022,0.487709289,0,16.87794988,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/18/2022,0.63336866,0,19.01422819,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/19/2022,0.633792799,0,19.21328758,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/20/2022,0.890375912,0,22.05367507,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/21/2022,1.056188122,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Galaxy Fondo,Sweets,10/22/2022,0.832407657,0,21.14025603,category_distribution,16.70617491,68.69555739
+Ginger lemon - Large,Hot Drinks,10/16/2022,0.027761902,0,15.87014043,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/17/2022,0.021403551,0,13.97345421,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/18/2022,0.033986798,0,16.72883397,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/19/2022,0.025331873,0,15.55970319,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/20/2022,0.038271457,0,17.40504979,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/21/2022,0.048072216,0,20.41687122,category_distribution,19.77386391,78.14413574
+Ginger lemon - Large,Hot Drinks,10/22/2022,0.044896542,0,18.62664929,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/16/2022,0.017351189,0,15.87014043,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/17/2022,0.013377219,0,13.97345421,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/18/2022,0.021241749,0,16.72883397,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/19/2022,0.015832421,0,15.55970319,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/20/2022,0.023919661,0,17.40504979,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/21/2022,0.030045135,0,20.41687122,category_distribution,19.77386391,78.14413574
+Ginger milk - Large,Hot Drinks,10/22/2022,0.028060338,0,18.62664929,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/16/2022,0.077501976,0,15.87014043,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/17/2022,0.05975158,0,13.97345421,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/18/2022,0.09487981,0,16.72883397,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/19/2022,0.070718146,0,15.55970319,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/20/2022,0.106841151,0,17.40504979,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/21/2022,0.134201604,0,20.41687122,category_distribution,19.77386391,78.14413574
+Ginger milk - Small,Hot Drinks,10/22/2022,0.125336178,0,18.62664929,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/16/2022,0.093696418,0,15.87014043,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/17/2022,0.072236985,0,13.97345421,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/18/2022,0.114705442,0,16.72883397,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/19/2022,0.085495072,0,15.55970319,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/20/2022,0.129166168,0,17.40504979,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/21/2022,0.16224373,0,20.41687122,category_distribution,19.77386391,78.14413574
+Green Tea - Large Cup,Hot Drinks,10/22/2022,0.151525828,0,18.62664929,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/16/2022,0.039329361,0,15.87014043,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/17/2022,0.030321697,0,13.97345421,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/18/2022,0.048147963,0,16.72883397,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/19/2022,0.03588682,0,15.55970319,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/20/2022,0.054217898,0,17.40504979,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/21/2022,0.068102306,0,20.41687122,category_distribution,19.77386391,78.14413574
+Green Tea - Large Teapot,Hot Drinks,10/22/2022,0.063603434,0,18.62664929,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/16/2022,0.164257919,0,15.87014043,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/17/2022,0.126637677,0,13.97345421,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/18/2022,0.201088553,0,16.72883397,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/19/2022,0.14988025,0,15.55970319,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/20/2022,0.226439455,0,17.40504979,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/21/2022,0.284427279,0,20.41687122,category_distribution,19.77386391,78.14413574
+Green Tea - Small Cup,Hot Drinks,10/22/2022,0.265637871,0,18.62664929,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/16/2022,0.033545631,0,15.87014043,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/17/2022,0.025862624,0,13.97345421,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/18/2022,0.041067381,0,16.72883397,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/19/2022,0.030609347,0,15.55970319,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/20/2022,0.046244677,0,17.40504979,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/21/2022,0.058087261,0,20.41687122,category_distribution,19.77386391,78.14413574
+Green Tea - Small Teapot,Hot Drinks,10/22/2022,0.054249988,0,18.62664929,category_distribution,19.77386391,78.14413574
+Honey cake,Sweets,10/16/2022,0.83862914,0,18.07429114,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/17/2022,0.663583994,0,16.87794988,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/18/2022,0.861770146,0,19.01422819,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/19/2022,0.862347235,0,19.21328758,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/20/2022,1.211457762,0,22.05367507,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/21/2022,1.437064146,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Honey cake,Sweets,10/22/2022,1.132585354,0,21.14025603,category_distribution,16.70617491,68.69555739
+Hot Pistachio latte,Espresso Drinks,10/16/2022,0.385544457,0,4.041176281,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/17/2022,0.349440549,0,3.782592646,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/18/2022,0.303151953,0,3.628162997,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/19/2022,0.307565057,0,3.859096551,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/20/2022,0.464268486,0,4.035094437,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/21/2022,0.834130092,0,4.855007687,category_distribution,3.087697894,77.19244734
+Hot Pistachio latte,Espresso Drinks,10/22/2022,0.733594998,0,4.653509002,category_distribution,3.087697894,77.19244734
+Hot Spanish latte,Espresso Drinks,10/16/2022,1.057105072,0,6.017726388,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/17/2022,0,0,4.535904911,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/18/2022,0.900528617,0,5.937794972,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/19/2022,0.394205816,0,5.280954658,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/20/2022,0.254649635,0,5.058395504,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/21/2022,2.731462848,0,7.858957022,high_item_model,11.13272638,101.6082169
+Hot Spanish latte,Espresso Drinks,10/22/2022,2.662350552,0,7.931420269,high_item_model,11.13272638,101.6082169
+Hot chocolate - Large,Hot Drinks,10/16/2022,0.115674591,0,15.87014043,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/17/2022,0.089181462,0,13.97345421,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/18/2022,0.141611657,0,16.72883397,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/19/2022,0.105549472,0,15.55970319,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/20/2022,0.159464405,0,17.40504979,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/21/2022,0.200300901,0,20.41687122,category_distribution,19.77386391,78.14413574
+Hot chocolate - Large,Hot Drinks,10/22/2022,0.187068923,0,18.62664929,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/16/2022,0.462698362,0,15.87014043,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/17/2022,0.35672585,0,13.97345421,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/18/2022,0.566446629,0,16.72883397,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/19/2022,0.422197888,0,15.55970319,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/20/2022,0.63785762,0,17.40504979,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/21/2022,0.801203603,0,20.41687122,category_distribution,19.77386391,78.14413574
+Hot chocolate - Small,Hot Drinks,10/22/2022,0.748275692,0,18.62664929,category_distribution,19.77386391,78.14413574
+Iced Americano,Cold Coffee Drinks,10/16/2022,0.722120783,0,6.875588099,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/17/2022,0.673618339,0,6.767278444,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/18/2022,0.733082371,0,6.942645183,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/19/2022,0.661885977,0,6.717550214,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/20/2022,0.937286651,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/21/2022,1.127462796,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+Iced Americano,Cold Coffee Drinks,10/22/2022,0.994863657,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+Iced Caramel Macchiato,Cold Coffee Drinks,10/16/2022,1.405856835,0,4.054110912,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/17/2022,1.430071683,0,3.876384075,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/18/2022,1.820174884,0,4.411393252,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/19/2022,1.283366531,0,3.91615511,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/20/2022,2.039362427,0,4.684866121,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/21/2022,2.45386404,0,4.979706982,high_item_model,2.031299068,58.68197307
+Iced Caramel Macchiato,Cold Coffee Drinks,10/22/2022,2.328363035,0,5.035418575,high_item_model,2.031299068,58.68197307
+Iced Drip Coffee,Dripp Coffee Drinks,10/16/2022,0.895981904,0,6.955575594,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/17/2022,0.724714319,0,6.269539733,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/18/2022,0.553468537,0,5.742015026,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/19/2022,1.171172485,0,7.516603503,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/20/2022,1.115205203,0,7.414832468,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/21/2022,1.812713544,0.775415753,9.145884333,category_distribution,3.413892931,67.08523227
+Iced Drip Coffee,Dripp Coffee Drinks,10/22/2022,1.386250505,0,8.07691945,category_distribution,3.413892931,67.08523227
+Iced Latte,Cold Coffee Drinks,10/16/2022,1.183682521,0,6.875588099,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/17/2022,1.104178514,0,6.767278444,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/18/2022,1.201650484,0,6.942645183,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/19/2022,1.084947117,0,6.717550214,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/20/2022,1.536377088,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/21/2022,1.84810912,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+Iced Latte,Cold Coffee Drinks,10/22/2022,1.630755891,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+Iced Mocha,Cold Coffee Drinks,10/16/2022,1.854413633,0,5.253111037,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/17/2022,1.315221932,0,4.918174191,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/18/2022,1.70250175,0,5.160160794,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/19/2022,1.724085891,0,5.298637609,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/20/2022,2.989072593,0,6.436918662,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/21/2022,3.595804301,0.338549442,7.175630114,high_item_model,2.641377582,61.72784566
+Iced Mocha,Cold Coffee Drinks,10/22/2022,2.805074255,0,6.178303726,high_item_model,2.641377582,61.72784566
+Italian Coffee - Large,Hot Drinks,10/16/2022,0.12145832,0,15.87014043,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/17/2022,0.093640536,0,13.97345421,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/18/2022,0.14869224,0,16.72883397,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/19/2022,0.110826946,0,15.55970319,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/20/2022,0.167437625,0,17.40504979,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/21/2022,0.210315946,0,20.41687122,category_distribution,19.77386391,78.14413574
+Italian Coffee - Large,Hot Drinks,10/22/2022,0.196422369,0,18.62664929,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/16/2022,0.288029731,0,15.87014043,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/17/2022,0.222061842,0,13.97345421,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/18/2022,0.352613027,0,16.72883397,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/19/2022,0.262818185,0,15.55970319,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/20/2022,0.397066369,0,17.40504979,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/21/2022,0.498749243,0,20.41687122,category_distribution,19.77386391,78.14413574
+Italian Coffee - Small,Hot Drinks,10/22/2022,0.465801618,0,18.62664929,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/16/2022,0.084442451,0,15.87014043,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/17/2022,0.065102468,0,13.97345421,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/18/2022,0.10337651,0,16.72883397,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/19/2022,0.077051115,0,15.55970319,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/20/2022,0.116409016,0,17.40504979,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/21/2022,0.146219658,0,20.41687122,category_distribution,19.77386391,78.14413574
+Karak tea - Large Cup,Hot Drinks,10/22/2022,0.136560314,0,18.62664929,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/16/2022,0.251013862,0,15.87014043,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/17/2022,0.193523774,0,13.97345421,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/18/2022,0.307297296,0,16.72883397,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/19/2022,0.229042354,0,15.55970319,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/20/2022,0.346037759,0,17.40504979,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/21/2022,0.434652955,0,20.41687122,category_distribution,19.77386391,78.14413574
+Karak tea - Small Cup,Hot Drinks,10/22/2022,0.405939563,0,18.62664929,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/16/2022,0.061307533,0,15.87014043,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/17/2022,0.047266175,0,13.97345421,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/18/2022,0.075054178,0,16.72883397,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/19/2022,0.05594122,0,15.55970319,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/20/2022,0.084516135,0,17.40504979,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/21/2022,0.106159477,0,20.41687122,category_distribution,19.77386391,78.14413574
+Karak tea - Small Teapot,Hot Drinks,10/22/2022,0.099146529,0,18.62664929,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/16/2022,0.003470238,0,15.87014043,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/17/2022,0.002675444,0,13.97345421,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/18/2022,0.00424835,0,16.72883397,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/19/2022,0.003166484,0,15.55970319,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/20/2022,0.004783932,0,17.40504979,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/21/2022,0.006009027,0,20.41687122,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Large Pot,Hot Drinks,10/22/2022,0.005612068,0,18.62664929,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/16/2022,0.010410713,0,15.87014043,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/17/2022,0.008026332,0,13.97345421,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/18/2022,0.012745049,0,16.72883397,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/19/2022,0.009499452,0,15.55970319,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/20/2022,0.014351796,0,17.40504979,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/21/2022,0.018027081,0,20.41687122,category_distribution,19.77386391,78.14413574
+Karak tea without sugar - Small Cup,Hot Drinks,10/22/2022,0.016836203,0,18.62664929,category_distribution,19.77386391,78.14413574
+Latte,Espresso Drinks,10/16/2022,1.752507562,0,6.277270569,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/17/2022,2.073295717,0,6.525772566,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/18/2022,2.540390238,0,6.932163418,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/19/2022,2.007206662,0,6.734532442,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/20/2022,2.620512012,0,7.419617623,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/21/2022,4.014488826,0,8.685738893,high_item_model,6.507731603,77.9572015
+Latte,Espresso Drinks,10/22/2022,3.276425215,0,7.628678503,high_item_model,6.507731603,77.9572015
+Lemon Cake,Sweets,10/16/2022,0.326308707,0,18.07429114,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/17/2022,0.258199035,0,16.87794988,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/18/2022,0.33531282,0,19.01422819,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/19/2022,0.335537364,0,19.21328758,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/20/2022,0.471375483,0,22.05367507,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/21/2022,0.559158418,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Lemon Cake,Sweets,10/22/2022,0.440686407,0,21.14025603,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/16/2022,0.778727058,0,18.07429114,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/17/2022,0.616185138,0,16.87794988,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/18/2022,0.800215136,0,19.01422819,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/19/2022,0.800751004,0,19.21328758,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/20/2022,1.124925065,0,22.05367507,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/21/2022,1.334416707,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Lotus Cake,Sweets,10/22/2022,1.0516864,0,21.14025603,category_distribution,16.70617491,68.69555739
+Lotus Frappuccino,Cold Drinks,10/16/2022,0.185114198,0,14.64728763,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/17/2022,0.161436082,0,14.00312011,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/18/2022,0.174998427,0,15.34468989,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/19/2022,0.208067676,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/20/2022,0.237590218,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/21/2022,0.245242182,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Lotus Frappuccino,Cold Drinks,10/22/2022,0.217205842,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Macchiato,Espresso Drinks,10/16/2022,0.110155559,0,4.041176281,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/17/2022,0.099840157,0,3.782592646,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/18/2022,0.086614844,0,3.628162997,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/19/2022,0.08787573,0,3.859096551,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/20/2022,0.132648139,0,4.035094437,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/21/2022,0.238322883,0,4.855007687,category_distribution,3.087697894,77.19244734
+Macchiato,Espresso Drinks,10/22/2022,0.209598571,0,4.653509002,category_distribution,3.087697894,77.19244734
+Manan Smoothie,Cold Drinks,10/16/2022,0.549273275,0,14.64728763,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/17/2022,0.479015259,0,14.00312011,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/18/2022,0.519257626,0,15.34468989,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/19/2022,0.617381138,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/20/2022,0.704980811,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/21/2022,0.72768582,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Manan Smoothie,Cold Drinks,10/22/2022,0.644496024,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Mastich Cheese,Sweets,10/16/2022,0.063054823,0,18.07429114,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/17/2022,0.049893533,0,16.87794988,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/18/2022,0.064794748,0,19.01422819,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/19/2022,0.064838138,0,19.21328758,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/20/2022,0.09108705,0,22.05367507,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/21/2022,0.108049936,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Mastich Cheese,Sweets,10/22/2022,0.085156794,0,21.14025603,category_distribution,16.70617491,68.69555739
+Milk - Large,Hot Drinks,10/16/2022,0.147355577,0,2.448115989,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/17/2022,0,0,1.870568557,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/18/2022,0,0,2.153418177,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/19/2022,0.098766499,0,2.323830526,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/20/2022,0,0,1.450161338,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/21/2022,0.172054583,0,2.490752571,high_item_model,2.986692064,122.7862293
+Milk - Large,Hot Drinks,10/22/2022,1.263492912,0,3.483292313,high_item_model,2.986692064,122.7862293
+Milk - Small,Hot Drinks,10/16/2022,0.053210312,0,15.87014043,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/17/2022,0.041023473,0,13.97345421,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/18/2022,0.065141362,0,16.72883397,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/19/2022,0.048552757,0,15.55970319,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/20/2022,0.073353626,0,17.40504979,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/21/2022,0.092138414,0,20.41687122,category_distribution,19.77386391,78.14413574
+Milk - Small,Hot Drinks,10/22/2022,0.086051705,0,18.62664929,category_distribution,19.77386391,78.14413574
+Mini pancake - Large,Hot Sweets,10/16/2022,0.610342752,0,14.14978436,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/17/2022,0.407233451,0,11.81706701,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/18/2022,0.626157503,0,13.6568393,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/19/2022,0.596313781,0,13.69568737,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/20/2022,0.658704805,0,14.15172253,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/21/2022,1.341558142,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Mini pancake - Large,Hot Sweets,10/22/2022,0.71320353,0,15.10234563,category_distribution,10.69046787,65.83152902
+Mini pancake - Small,Hot Sweets,10/16/2022,2.713840619,0,7.103804441,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/17/2022,2.009416835,0,6.382522318,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/18/2022,2.914910225,0,7.661287066,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/19/2022,2.259219076,0,6.773412878,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/20/2022,3.091485382,0,7.666396244,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/21/2022,4.728658632,0,9.409575758,high_item_model,5.259616186,66.48391246
+Mini pancake - Small,Hot Sweets,10/22/2022,3.42354281,0,7.763016016,high_item_model,5.259616186,66.48391246
+Mini pancake Sticks,Hot Sweets,10/16/2022,0.048894861,0,14.14978436,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/17/2022,0.032623674,0,11.81706701,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/18/2022,0.050161789,0,13.6568393,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/19/2022,0.047770994,0,13.69568737,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/20/2022,0.052769169,0,14.15172253,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/21/2022,0.10747289,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Mini pancake Sticks,Hot Sweets,10/22/2022,0.057135089,0,15.10234563,category_distribution,10.69046787,65.83152902
+Mocha,Espresso Drinks,10/16/2022,0.235139751,0,4.041176281,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/17/2022,0.213120335,0,3.782592646,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/18/2022,0.184889378,0,3.628162997,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/19/2022,0.187580886,0,3.859096551,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/20/2022,0.283152758,0,4.035094437,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/21/2022,0.508727693,0,4.855007687,category_distribution,3.087697894,77.19244734
+Mocha,Espresso Drinks,10/22/2022,0.447412334,0,4.653509002,category_distribution,3.087697894,77.19244734
+Molten chocolate,Sweets,10/16/2022,1.243880405,0,4.089501529,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/17/2022,1.390586584,0,4.172367006,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/18/2022,1.464077581,0,4.025842891,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/19/2022,0.829806465,0,3.59430746,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/20/2022,1.611069536,0,4.305783872,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/21/2022,2.758415357,0.147733913,5.486549252,high_item_model,2.175009633,63.50393089
+Molten chocolate,Sweets,10/22/2022,1.73685881,0,4.527668959,high_item_model,2.175009633,63.50393089
+Morning Waffle,Hot Sweets,10/16/2022,0.00168603,0,14.14978436,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/17/2022,0.001124954,0,11.81706701,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/18/2022,0.001729717,0,13.6568393,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/19/2022,0.001647276,0,13.69568737,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/20/2022,0.001819627,0,14.15172253,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/21/2022,0.003705962,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Morning Waffle,Hot Sweets,10/22/2022,0.001970175,0,15.10234563,category_distribution,10.69046787,65.83152902
+Moroccan Tea,Hot Drinks,10/16/2022,0.093696418,0,15.87014043,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/17/2022,0.072236985,0,13.97345421,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/18/2022,0.114705442,0,16.72883397,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/19/2022,0.085495072,0,15.55970319,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/20/2022,0.129166168,0,17.40504979,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/21/2022,0.16224373,0,20.41687122,category_distribution,19.77386391,78.14413574
+Moroccan Tea,Hot Drinks,10/22/2022,0.151525828,0,18.62664929,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/16/2022,0.024291664,0,15.87014043,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/17/2022,0.018728107,0,13.97345421,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/18/2022,0.029738448,0,16.72883397,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/19/2022,0.022165389,0,15.55970319,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/20/2022,0.033487525,0,17.40504979,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/21/2022,0.042063189,0,20.41687122,category_distribution,19.77386391,78.14413574
+Nirvana - Large,Hot Drinks,10/22/2022,0.039284474,0,18.62664929,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/16/2022,0.083285705,0,15.87014043,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/17/2022,0.064210653,0,13.97345421,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/18/2022,0.101960393,0,16.72883397,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/19/2022,0.07599562,0,15.55970319,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/20/2022,0.114814372,0,17.40504979,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/21/2022,0.144216649,0,20.41687122,category_distribution,19.77386391,78.14413574
+Nirvana - Small,Hot Drinks,10/22/2022,0.134689625,0,18.62664929,category_distribution,19.77386391,78.14413574
+Orange juice,Cold Drinks,10/16/2022,1.059095984,0,14.64728763,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/17/2022,0.923626107,0,14.00312011,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/18/2022,1.001220506,0,15.34468989,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/19/2022,1.190419984,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/20/2022,1.359327641,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/21/2022,1.403106913,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Orange juice,Cold Drinks,10/22/2022,1.242702278,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/16/2022,0.670659634,0,14.64728763,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/17/2022,0.584874985,0,14.00312011,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/18/2022,0.634010693,0,15.34468989,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/19/2022,0.753818958,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/20/2022,0.860777675,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/21/2022,0.888500366,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Oreo Frappuccino,Cold Drinks,10/22/2022,0.786926084,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Passion Mojito,Cold Drinks,10/16/2022,1.888001216,0,4.683425327,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/17/2022,1.717492632,0,4.265672643,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/18/2022,1.790486885,0,4.442275748,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/19/2022,1.644328557,0,4.303827807,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/20/2022,2.106931009,0,4.72249294,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/21/2022,2.666932121,0.19392006,5.310964515,high_item_model,1.678802218,57.15071379
+Passion Mojito,Cold Drinks,10/22/2022,2.584451594,0,5.276539199,high_item_model,1.678802218,57.15071379
+Peach Iced Tea,Cold Drinks,10/16/2022,0.273119308,0,14.64728763,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/17/2022,0.238184383,0,14.00312011,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/18/2022,0.2581944,0,15.34468989,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/19/2022,0.306985096,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/20/2022,0.350542945,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/21/2022,0.361832728,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Peach Iced Tea,Cold Drinks,10/22/2022,0.320467636,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Peanut Butter Boat,Bakery,10/16/2022,0.068318224,0,8.606133769,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/17/2022,0.078939532,0,9.035584777,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/18/2022,0.078993764,0,9.271938936,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/19/2022,0.076933446,0,8.99773003,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/20/2022,0.109215179,0,10.69881842,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/21/2022,0.087076405,0,9.701790889,category_distribution,6.736333354,66.35360477
+Peanut Butter Boat,Bakery,10/22/2022,0.095434553,0,9.898608959,category_distribution,6.736333354,66.35360477
+Pistachio Cake,Sweets,10/16/2022,0.430349164,0,18.07429114,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/17/2022,0.340523366,0,16.87794988,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/18/2022,0.442224154,0,19.01422819,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/19/2022,0.442520292,0,19.21328758,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/20/2022,0.621669115,0,22.05367507,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/21/2022,0.737440812,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Pistachio Cake,Sweets,10/22/2022,0.581195116,0,21.14025603,category_distribution,16.70617491,68.69555739
+Pistachio latte,Cold Coffee Drinks,10/16/2022,2.611904625,0,6.400965482,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/17/2022,2.538963138,0,6.066975677,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/18/2022,2.783062234,0,6.666674591,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/19/2022,2.783282281,0,6.664998221,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/20/2022,3.124931455,0,7.014814771,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/21/2022,4.246994613,0.378669948,7.993096705,high_item_model,1.994083902,47.90257417
+Pistachio latte,Cold Coffee Drinks,10/22/2022,3.989036711,0.028787524,7.632523716,high_item_model,1.994083902,47.90257417
+Plain Croissant,Bakery,10/16/2022,0.370870359,0,8.606133769,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/17/2022,0.42852889,0,9.035584777,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/18/2022,0.428823293,0,9.271938936,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/19/2022,0.417638708,0,8.99773003,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/20/2022,0.592882402,0,10.69881842,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/21/2022,0.472700487,0,9.701790889,category_distribution,6.736333354,66.35360477
+Plain Croissant,Bakery,10/22/2022,0.518073288,0,9.898608959,category_distribution,6.736333354,66.35360477
+Red Mojito,Cold Drinks,10/16/2022,1.905765839,0,14.64728763,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/17/2022,1.661997694,0,14.00312011,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/18/2022,1.801623146,0,15.34468989,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/19/2022,2.142073782,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/20/2022,2.446010769,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/21/2022,2.52478837,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Red Mojito,Cold Drinks,10/22/2022,2.23615195,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Refresh Espresso,Cold Coffee Drinks,10/16/2022,0.39456084,0,6.875588099,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/17/2022,0.368059505,0,6.767278444,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/18/2022,0.400550161,0,6.942645183,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/19/2022,0.361649039,0,6.717550214,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/20/2022,0.512125696,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/21/2022,0.616036373,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+Refresh Espresso,Cold Coffee Drinks,10/22/2022,0.543585297,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+Relax,Cold Drinks,10/16/2022,0.785976675,0,14.64728763,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/17/2022,0.685441724,0,14.00312011,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/18/2022,0.743026106,0,15.34468989,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/19/2022,0.883434888,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/20/2022,1.008784696,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/21/2022,1.041274184,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Relax,Cold Drinks,10/22/2022,0.922234642,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Ruby Mini pancake - Large,Hot Sweets,10/16/2022,0.003372059,0,14.14978436,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/17/2022,0.002249909,0,11.81706701,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/18/2022,0.003459434,0,13.6568393,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/19/2022,0.003294551,0,13.69568737,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/20/2022,0.003639253,0,14.15172253,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/21/2022,0.007411923,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Large,Hot Sweets,10/22/2022,0.003940351,0,15.10234563,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/16/2022,0.005058089,0,14.14978436,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/17/2022,0.003374863,0,11.81706701,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/18/2022,0.005189151,0,13.6568393,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/19/2022,0.004941827,0,13.69568737,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/20/2022,0.00545888,0,14.15172253,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/21/2022,0.011117885,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Ruby Mini pancake - Small,Hot Sweets,10/22/2022,0.005910526,0,15.10234563,category_distribution,10.69046787,65.83152902
+Saffron Cake,Sweets,10/16/2022,1.048032399,0,3.870566626,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/17/2022,0.804268514,0,3.377482051,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/18/2022,1.145402764,0,4.074989974,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/19/2022,1.315943084,0,3.974735102,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/20/2022,2.656281723,0.020567548,5.233100946,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/21/2022,2.875564155,0,5.387580447,high_item_model,2.684042061,65.2055416
+Saffron Cake,Sweets,10/22/2022,2.059956325,0,4.832674621,high_item_model,2.684042061,65.2055416
+Saffron Latte,Cold Coffee Drinks,10/16/2022,0.327559943,0,6.875588099,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/17/2022,0.305558834,0,6.767278444,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/18/2022,0.332532209,0,6.942645183,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/19/2022,0.300236938,0,6.717550214,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/20/2022,0.425160955,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/21/2022,0.511426423,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+Saffron Latte,Cold Coffee Drinks,10/22/2022,0.45127836,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/16/2022,0.004626984,0,15.87014043,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/17/2022,0.003567258,0,13.97345421,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/18/2022,0.005664466,0,16.72883397,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/19/2022,0.004221979,0,15.55970319,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/20/2022,0.006378576,0,17.40504979,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/21/2022,0.008012036,0,20.41687122,category_distribution,19.77386391,78.14413574
+Saudi Coffee - 1 Liter pot,Hot Drinks,10/22/2022,0.007482757,0,18.62664929,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/16/2022,0.224408706,0,15.87014043,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/17/2022,0.173012037,0,13.97345421,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/18/2022,0.274726615,0,16.72883397,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/19/2022,0.204765976,0,15.55970319,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/20/2022,0.309360946,0,17.40504979,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/21/2022,0.388583747,0,20.41687122,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large Cup,Hot Drinks,10/22/2022,0.362913711,0,18.62664929,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/16/2022,0.318105124,0,15.87014043,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/17/2022,0.245249022,0,13.97345421,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/18/2022,0.389432058,0,16.72883397,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/19/2022,0.290261048,0,15.55970319,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/20/2022,0.438527114,0,17.40504979,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/21/2022,0.550827477,0,20.41687122,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Large pot,Hot Drinks,10/22/2022,0.514439538,0,18.62664929,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/16/2022,0.351650755,0,15.87014043,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/17/2022,0.271111646,0,13.97345421,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/18/2022,0.430499438,0,16.72883397,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/19/2022,0.320870395,0,15.55970319,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/20/2022,0.484771791,0,17.40504979,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/21/2022,0.608914738,0,20.41687122,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small Cup,Hot Drinks,10/22/2022,0.568689526,0,18.62664929,category_distribution,19.77386391,78.14413574
+Saudi Coffee - Small pot,Hot Drinks,10/16/2022,1.40404768,0,5.056703497,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/17/2022,1.645274791,0,5.347503293,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/18/2022,2.271201177,0,5.957817643,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/19/2022,2.464364802,0,6.131548955,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/20/2022,2.152643217,0,5.97656348,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/21/2022,3.499859987,0,7.088880436,high_item_model,4.535030091,71.52564237
+Saudi Coffee - Small pot,Hot Drinks,10/22/2022,2.789646743,0,6.7424579,high_item_model,4.535030091,71.52564237
+Souffle,Sweets,10/16/2022,0.816559952,0,18.07429114,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/17/2022,0.646121258,0,16.87794988,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/18/2022,0.839091984,0,19.01422819,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/19/2022,0.839653887,0,19.21328758,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/20/2022,1.179577295,0,22.05367507,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/21/2022,1.399246669,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Souffle,Sweets,10/22/2022,1.102780476,0,21.14025603,category_distribution,16.70617491,68.69555739
+Spanish latte,Cold Coffee Drinks,10/16/2022,12.33603847,0.437416465,24.64559985,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/17/2022,9.554971559,0,21.78262574,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/18/2022,11.06517523,0,23.83769283,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/19/2022,11.6488837,0.046616552,22.96697381,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/20/2022,14.79273229,2.526881205,27.16843866,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/21/2022,18.86310457,6.550562053,31.40107195,high_item_model,8.204978116,44.98557728
+Spanish latte,Cold Coffee Drinks,10/22/2022,15.53083117,3.480450231,28.31034361,high_item_model,8.204978116,44.98557728
+Stick waffle,Hot Sweets,10/16/2022,0.982955316,0,14.14978436,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/17/2022,0.655848348,0,11.81706701,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/18/2022,1.008424928,0,13.6568393,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/19/2022,0.960361697,0,13.69568737,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/20/2022,1.060842269,0,14.15172253,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/21/2022,2.160575682,3.622723522,19.63897195,category_distribution,10.69046787,65.83152902
+Stick waffle,Hot Sweets,10/22/2022,1.148612315,0,15.10234563,category_distribution,10.69046787,65.83152902
+Strawberry Cake,Sweets,10/16/2022,0.176553503,0,18.07429114,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/17/2022,0.139701894,0,16.87794988,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/18/2022,0.181425294,0,19.01422819,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/19/2022,0.181546786,0,19.21328758,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/20/2022,0.255043739,0,22.05367507,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/21/2022,0.30253982,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Strawberry Cake,Sweets,10/22/2022,0.238439022,0,21.14025603,category_distribution,16.70617491,68.69555739
+Strawberry smoothie,Cold Drinks,10/16/2022,0.069797157,0,14.64728763,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/17/2022,0.060869342,0,14.00312011,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/18/2022,0.065983013,0,15.34468989,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/19/2022,0.078451747,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/20/2022,0.089583197,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/21/2022,0.092468364,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Strawberry smoothie,Cold Drinks,10/22/2022,0.081897285,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Thyme Croissant,Bakery,10/16/2022,0.04066561,0,8.606133769,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/17/2022,0.046987817,0,9.035584777,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/18/2022,0.047020098,0,9.271938936,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/19/2022,0.045793718,0,8.99773003,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/20/2022,0.065009035,0,10.69881842,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/21/2022,0.051831194,0,9.701790889,category_distribution,6.736333354,66.35360477
+Thyme Croissant,Bakery,10/22/2022,0.056806282,0,9.898608959,category_distribution,6.736333354,66.35360477
+Tiramisu,Sweets,10/16/2022,0.889072998,0,18.07429114,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/17/2022,0.703498821,0,16.87794988,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/18/2022,0.913605944,0,19.01422819,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/19/2022,0.914217746,0,19.21328758,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/20/2022,1.284327402,0,22.05367507,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/21/2022,1.523504095,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Tiramisu,Sweets,10/22/2022,1.200710789,0,21.14025603,category_distribution,16.70617491,68.69555739
+Toffee Crush,Cold Drinks,10/16/2022,0.582654524,0,14.64728763,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/17/2022,0.508126683,0,14.00312011,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/18/2022,0.55081472,0,15.34468989,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/19/2022,0.654901539,0.875830125,16.37051785,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/20/2022,0.747824949,1.834870455,17.49880893,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/21/2022,0.77190982,2.568058488,18.28563963,category_distribution,3.943324011,40.39931058
+Toffee Crush,Cold Drinks,10/22/2022,0.68366429,0.905776109,16.58538418,category_distribution,3.943324011,40.39931058
+Turkish Coffee,Hot Drinks,10/16/2022,1.318358729,0,4.150794989,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/17/2022,1.903469075,0,4.740097944,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/18/2022,1.976646737,0,4.638618449,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/19/2022,2.147338419,0,5.068798643,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/20/2022,2.147386744,0,4.977911543,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/21/2022,2.025547126,0,4.888239062,high_item_model,1.593942273,60.00723853
+Turkish Coffee,Hot Drinks,10/22/2022,1.999208166,0,4.860037884,high_item_model,1.593942273,60.00723853
+Turkish Tea - Large Cup,Hot Drinks,10/16/2022,0.352807501,0,15.87014043,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/17/2022,0.272003461,0,13.97345421,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/18/2022,0.431915555,0,16.72883397,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/19/2022,0.32192589,0,15.55970319,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/20/2022,0.486366435,0,17.40504979,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/21/2022,0.610917747,0,20.41687122,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Cup,Hot Drinks,10/22/2022,0.570560215,0,18.62664929,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/16/2022,0.131869033,0,15.87014043,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/17/2022,0.101666867,0,13.97345421,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/18/2022,0.161437289,0,16.72883397,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/19/2022,0.120326398,0,15.55970319,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/20/2022,0.181789422,0,17.40504979,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/21/2022,0.228343027,0,20.41687122,category_distribution,19.77386391,78.14413574
+Turkish Tea - Large Teapot,Hot Drinks,10/22/2022,0.213258572,0,18.62664929,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/16/2022,0.566805494,0,15.87014043,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/17/2022,0.436989166,0,13.97345421,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/18/2022,0.693897121,0,16.72883397,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/19/2022,0.517192413,0,15.55970319,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/20/2022,0.781375585,0,17.40504979,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/21/2022,0.981474414,0,20.41687122,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Cup,Hot Drinks,10/22/2022,0.916637723,0,18.62664929,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/16/2022,0.402547575,0,15.87014043,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/17/2022,0.310351489,0,13.97345421,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/18/2022,0.492808567,0,16.72883397,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/19/2022,0.367312163,0,15.55970319,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/20/2022,0.554936129,0,17.40504979,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/21/2022,0.697047135,0,20.41687122,category_distribution,19.77386391,78.14413574
+Turkish Tea - Small Teapot,Hot Drinks,10/22/2022,0.650999852,0,18.62664929,category_distribution,19.77386391,78.14413574
+V60 - Colombian,Dripp Coffee Drinks,10/16/2022,3.398445173,0,9.224415524,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/17/2022,3.158575317,0,8.626620364,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/18/2022,2.84679463,0,8.063464913,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/19/2022,3.75780555,0,9.309673158,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/20/2022,5.004496256,0,10.38676827,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/21/2022,7.018390637,1.35438086,12.38719129,high_item_model,7.059102135,66.26912208
+V60 - Colombian,Dripp Coffee Drinks,10/22/2022,5.352035188,0,10.70209015,high_item_model,7.059102135,66.26912208
+V60 - Java,Dripp Coffee Drinks,10/16/2022,0.998036794,0,6.955575594,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/17/2022,0.807261343,0,6.269539733,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/18/2022,0.616510179,0,5.742015026,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/19/2022,1.304572366,0,7.516603503,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/20/2022,1.242230251,0,7.414832468,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/21/2022,2.019186779,0.775415753,9.145884333,category_distribution,3.413892931,67.08523227
+V60 - Java,Dripp Coffee Drinks,10/22/2022,1.544148385,0,8.07691945,category_distribution,3.413892931,67.08523227
+Vanilla Cookies,Bakery,10/16/2022,0.727101098,0,8.606133769,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/17/2022,0.840142167,0,9.035584777,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/18/2022,0.84071935,0,9.271938936,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/19/2022,0.818791678,0,8.99773003,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/20/2022,1.162361552,0,10.69881842,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/21/2022,0.926741744,0,9.701790889,category_distribution,6.736333354,66.35360477
+Vanilla Cookies,Bakery,10/22/2022,1.015696314,0,9.898608959,category_distribution,6.736333354,66.35360477
+Vanilla Tart,Sweets,10/16/2022,0.040985635,0,18.07429114,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/17/2022,0.032430797,0,16.87794988,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/18/2022,0.042116586,0,19.01422819,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/19/2022,0.04214479,0,19.21328758,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/20/2022,0.059206582,0,22.05367507,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/21/2022,0.070232458,1.259375553,25.32246834,category_distribution,16.70617491,68.69555739
+Vanilla Tart,Sweets,10/22/2022,0.055351916,0,21.14025603,category_distribution,16.70617491,68.69555739
+chocolate cookies,Bakery,10/16/2022,0.769393332,0,8.606133769,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/17/2022,0.889009496,0,9.035584777,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/18/2022,0.889620252,0,9.271938936,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/19/2022,0.866417145,0,8.99773003,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/20/2022,1.229970948,0,10.69881842,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/21/2022,0.980646186,0,9.701790889,category_distribution,6.736333354,66.35360477
+chocolate cookies,Bakery,10/22/2022,1.074774847,0,9.898608959,category_distribution,6.736333354,66.35360477
+iced Sandwich,Cold Coffee Drinks,10/16/2022,0.419375987,0,6.875588099,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/17/2022,0.391207901,0,6.767278444,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/18/2022,0.425741995,0,6.942645183,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/19/2022,0.384394262,0,6.717550214,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/20/2022,0.544334859,0.032169946,7.898298154,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/21/2022,0.654780799,1.162077724,8.960546305,category_distribution,2.472502366,49.67584662
+iced Sandwich,Cold Coffee Drinks,10/22/2022,0.577773052,0.222317974,8.013304487,category_distribution,2.472502366,49.67584662
+zaatar cheese pastry,Bakery,10/16/2022,0.021146117,0,8.606133769,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/17/2022,0.024433665,0,9.035584777,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/18/2022,0.024450451,0,9.271938936,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/19/2022,0.023812733,0,8.99773003,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/20/2022,0.033804698,0,10.69881842,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/21/2022,0.026952221,0,9.701790889,category_distribution,6.736333354,66.35360477
+zaatar cheese pastry,Bakery,10/22/2022,0.029539266,0,9.898608959,category_distribution,6.736333354,66.35360477
