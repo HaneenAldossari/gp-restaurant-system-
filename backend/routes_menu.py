@@ -1,5 +1,5 @@
 """Menu Engineering API — GET /api/menu-engineering"""
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from data_loader_db import load_data, filter_data
 
 router = APIRouter(tags=["Menu Engineering"])
@@ -13,7 +13,7 @@ def menu_engineering(
     df = filter_data(load_data(), start_date, end_date)
 
     if df.empty:
-        return {"error": "No data for the selected filters"}
+        raise HTTPException(status_code=404, detail="No data for the selected filters")
 
     # Per-product metrics
     items = df.groupby("Product").agg(

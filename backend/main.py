@@ -1,7 +1,14 @@
 """FastAPI backend for GP Restaurant Sales System."""
-from fastapi import FastAPI
+import logging
+import traceback
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
 from data_loader_db import load_data
+
+log = logging.getLogger("gp")
 
 from routes_dashboard import router as dashboard_router
 from routes_menu import router as menu_router
@@ -53,6 +60,17 @@ app.include_router(upload_router)
 def startup():
     """Pre-load data on startup."""
     load_data()
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception):
+    """Catch-all so unexpected errors return a clean 500 instead of HTML stack traces."""
+    log.error("Unhandled %s on %s: %s", type(exc).__name__, request.url, exc)
+    log.debug(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+    )
 
 
 @app.get("/api/health", tags=["Health"], summary="Health check")

@@ -47,5 +47,8 @@ __pycache__/
 .venv/
 venv/
 
+# Backend forecast cache (regenerated on first request)
+backend/cache/
+
 # Claude Code
 .claude/

@@ -1,5 +1,5 @@
 """Dashboard API — GET /api/dashboard"""
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from data_loader_db import load_data, filter_data
 
 router = APIRouter(tags=["Dashboard"])
@@ -26,7 +26,7 @@ def dashboard(
     df = filter_data(load_data(), start_date, end_date, category)
 
     if df.empty:
-        return {"error": "No data for the selected filters"}
+        raise HTTPException(status_code=404, detail="No data for the selected filters")
 
     total_revenue = round(float(df["Total Price"].sum()), 2)
     total_orders = int(df["Order ID"].nunique())

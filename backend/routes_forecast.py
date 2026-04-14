@@ -5,23 +5,37 @@ Calls Noura's run_forecast() function from prophet_model.py with PostgreSQL data
 The ML logic itself is untouched in prophet_model.py — this file only:
   - Loads sales rows from PostgreSQL via data_loader_db
   - Reshapes them into the columns Noura's function expects
-  - Caches the resulting predictions DataFrame in memory + persists once to
-    the `forecasts` table
+  - Caches the resulting predictions DataFrame in memory AND on disk
+    (cache/predictions.pkl) so server restarts don't trigger retraining
+  - Persists one summary row per run to the `forecasts` table
   - Slices the predictions per endpoint (item / category / total)
+
+Cache invalidation:
+  - The pickle stores a "data signature" (latest upload id + row count).
+  - On startup or first request, we compare against the current DB signature.
+  - If they match → load from disk, no retraining.
+  - If they differ → retrain and overwrite the pickle.
 """
 
 import json
+import os
+import pickle
 import threading
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
 
 from data_loader_db import load_data
 from db import get_engine
 from prophet_model import run_forecast
+
+CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
+CACHE_FILE = CACHE_DIR / "predictions.pkl"
 
 router = APIRouter(tags=["Forecasting"])
 
@@ -63,13 +77,57 @@ def _build_input_frame() -> tuple[pd.DataFrame, dict[str, str]]:
     return model_df, cat_map
 
 
+def _current_signature() -> dict[str, Any]:
+    """A fingerprint of the data — used to invalidate the disk cache."""
+    with get_engine().connect() as conn:
+        latest = conn.execute(text("""
+            SELECT
+                COALESCE(MAX(uploads.id), 0)  AS upload_id,
+                (SELECT COUNT(*) FROM order_items) AS item_count
+            FROM uploads
+        """)).fetchone()
+    return {"upload_id": int(latest[0]), "item_count": int(latest[1])}
+
+
+def _try_load_from_disk() -> tuple[pd.DataFrame, dict[str, str], pd.Timestamp] | None:
+    """Load cached predictions from disk if signature still matches."""
+    if not CACHE_FILE.exists():
+        return None
+    try:
+        with CACHE_FILE.open("rb") as f:
+            payload = pickle.load(f)
+        if payload.get("signature") != _current_signature():
+            return None
+        return payload["predictions"], payload["category_lookup"], payload["data_end_date"]
+    except Exception:
+        return None
+
+
+def _save_to_disk(predictions: pd.DataFrame, cat_map: dict[str, str], end_date: pd.Timestamp) -> None:
+    payload = {
+        "signature": _current_signature(),
+        "predictions": predictions,
+        "category_lookup": cat_map,
+        "data_end_date": end_date,
+    }
+    with CACHE_FILE.open("wb") as f:
+        pickle.dump(payload, f)
+
+
 def _get_predictions() -> pd.DataFrame:
-    """Return cached predictions, computing them on first call."""
+    """Return cached predictions: in-memory → disk → train fresh."""
     global _predictions_cache, _category_lookup, _data_end_date
     with _cache_lock:
         if _predictions_cache is not None:
             return _predictions_cache
 
+        # Try the disk cache first (survives server restarts)
+        loaded = _try_load_from_disk()
+        if loaded is not None:
+            _predictions_cache, _category_lookup, _data_end_date = loaded
+            return _predictions_cache
+
+        # Train from scratch
         model_df, cat_map = _build_input_frame()
         if model_df.empty:
             raise RuntimeError(
@@ -82,6 +140,7 @@ def _get_predictions() -> pd.DataFrame:
         _predictions_cache = predictions
         _category_lookup = cat_map
         _persist_run(predictions)
+        _save_to_disk(predictions, cat_map, _data_end_date)
         return predictions
 
 
@@ -123,12 +182,16 @@ def _persist_run(predictions: pd.DataFrame) -> None:
 
 
 def invalidate_cache() -> None:
-    """Clear the cache. Called by the upload endpoint after new data lands."""
+    """Clear in-memory and on-disk caches. Called after a new upload."""
     global _predictions_cache, _category_lookup, _data_end_date
     with _cache_lock:
         _predictions_cache = None
         _category_lookup = {}
         _data_end_date = None
+        try:
+            CACHE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -162,11 +225,11 @@ def forecast_item(
     try:
         preds = _get_predictions()
     except RuntimeError as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=409, detail=str(e))
 
     item_rows = preds[preds["product"] == target]
     if item_rows.empty:
-        return {"error": f"Product '{target}' not in forecast output"}
+        raise HTTPException(status_code=404, detail=f"Product '{target}' not in forecast output")
 
     future = _slice_future(item_rows, period)
 
@@ -202,11 +265,11 @@ def forecast_category(
     try:
         preds = _get_predictions()
     except RuntimeError as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=409, detail=str(e))
 
     products_in_cat = [p for p, c in _category_lookup.items() if c == target]
     if not products_in_cat:
-        return {"error": f"Category '{target}' not found"}
+        raise HTTPException(status_code=404, detail=f"Category '{target}' not found")
 
     cat_rows = _slice_future(preds[preds["product"].isin(products_in_cat)], period)
 
@@ -248,7 +311,7 @@ def forecast_total(period: int = Query(7, description="Forecast horizon in days 
     try:
         preds = _get_predictions()
     except RuntimeError as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=409, detail=str(e))
 
     future = _slice_future(preds, period)
     future["category"] = future["product"].map(_category_lookup)

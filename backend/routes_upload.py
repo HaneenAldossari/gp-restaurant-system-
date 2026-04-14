@@ -15,7 +15,7 @@ import os
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from sqlalchemy import text
 
 from db import get_engine
@@ -131,7 +131,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         else:
             df = pd.read_excel(io.BytesIO(content), engine="openpyxl")
     except Exception as e:
-        return {"success": False, "error": f"Could not read file: {e}"}
+        raise HTTPException(status_code=400, detail=f"Could not read file: {e}")
 
     df.columns = [str(c).strip() for c in df.columns]
     original_cols = list(df.columns)
@@ -154,11 +154,13 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
             "unit_price": col_price, "unit_cost": col_cost, "categ_EN": col_cat_en}
     missing = [k for k, v in must.items() if v is None]
     if missing:
-        return {
-            "success": False,
-            "error": f"Missing required columns: {missing}",
-            "columnsFound": original_cols,
-        }
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Missing required columns: {missing}",
+                "columnsFound": original_cols,
+            },
+        )
 
     norm = pd.DataFrame()
     norm["order_reference"] = df[col_order_ref].astype(str).str.strip()
@@ -178,7 +180,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     try:
         norm["order_datetime"] = _build_datetime(df)
     except Exception as e:
-        return {"success": False, "error": str(e), "columnsFound": original_cols}
+        raise HTTPException(status_code=400, detail={"message": str(e), "columnsFound": original_cols})
 
     # ── Auto-enrichment: fill any missing season / occasion / time_period
     #    by computing them from order_datetime. Always overwrites obviously
@@ -258,7 +260,14 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
             )
         prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
-        # Orders
+        # Orders — track which references existed before so we can wipe their items
+        existing_refs = set(
+            r[0] for r in conn.execute(
+                text("SELECT order_reference FROM orders WHERE order_reference = ANY(:refs)"),
+                {"refs": list(norm["order_reference"].unique())},
+            ).fetchall()
+        )
+
         orders_df = norm[["order_reference", "order_datetime", "customer_name",
                           "time_period", "season", "occasion"]].drop_duplicates(subset=["order_reference"])
         for _, r in orders_df.iterrows():
@@ -268,6 +277,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
                                         time_period, season, occasion)
                     VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
                     ON CONFLICT (order_reference) DO UPDATE SET
+                        upload_id = EXCLUDED.upload_id,
                         order_datetime = EXCLUDED.order_datetime,
                         customer_name = EXCLUDED.customer_name,
                         time_period = EXCLUDED.time_period,
@@ -280,33 +290,32 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
             )
         order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 
-        # Order items (skip exact-duplicate rows already in DB)
+        # Order items — re-upload semantics: wipe existing items on touched orders,
+        # then bulk insert the new ones. No more float-precision dedup bug.
+        replaced_refs = [r for r in orders_df["order_reference"] if r in existing_refs]
+        if replaced_refs:
+            replaced_ids = [order_map[r] for r in replaced_refs if r in order_map]
+            if replaced_ids:
+                conn.execute(
+                    text("DELETE FROM order_items WHERE order_id = ANY(:ids)"),
+                    {"ids": replaced_ids},
+                )
+
         inserted = 0
         for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
             oid = order_map.get(r["order_reference"])
             pid = prod_map.get(r["sku"])
             if oid is None or pid is None:
                 continue
-            exists = conn.execute(
+            conn.execute(
                 text("""
-                    SELECT 1 FROM order_items
-                    WHERE order_id = :oid AND product_id = :pid
-                      AND quantity = :qty AND unit_price = :price AND unit_cost = :cost
-                    LIMIT 1
+                    INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
+                    VALUES (:oid, :pid, :qty, :price, :cost)
                 """),
                 {"oid": oid, "pid": pid, "qty": int(r["quantity"]),
                  "price": float(r["unit_price"]), "cost": float(r["unit_cost"])},
-            ).scalar()
-            if not exists:
-                conn.execute(
-                    text("""
-                        INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
-                        VALUES (:oid, :pid, :qty, :price, :cost)
-                    """),
-                    {"oid": oid, "pid": pid, "qty": int(r["quantity"]),
-                     "price": float(r["unit_price"]), "cost": float(r["unit_cost"])},
-                )
-                inserted += 1
+            )
+            inserted += 1
 
     # Invalidate caches so forecast/dashboard/menu see the new data
     data_loader_db.reload_data()
