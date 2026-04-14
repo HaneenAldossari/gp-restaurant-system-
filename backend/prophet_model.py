@@ -1,178 +1,285 @@
 import pandas as pd
 from prophet import Prophet
-from sklearn.metrics import mean_absolute_error
 import numpy as np
 
-def hybrid_forecast():
+# =========================
+# Load Data
+# =========================
+df = pd.read_excel("final_sales_with_season_and_occasion_2022_.xlsx")
+df['date'] = pd.to_datetime(df['date'])
 
-    df = pd.read_excel("final_sales_with_season_and_occasion_2022_.xlsx")
+# =========================
+# ترتيب المنتجات (الأكثر مبيعًا)
+# =========================
+product_sales = df.groupby('name')['quantity'].sum().sort_values(ascending=False)
+top_product_names = product_sales.index.tolist()
 
-    df['ds'] = pd.to_datetime(df['date'])
+# =========================
+# ترتيب الفترات
+# =========================
+time_order = ['morning', 'Afternoon', 'Evening', 'night']
+time_mapping = {k: v for v, k in enumerate(time_order)}
 
-    full_dates = pd.date_range(start=df['ds'].min(), end=df['ds'].max(), freq='D')
+all_predictions = []
 
-    results = []
+# =========================
+# Loop
+# =========================
+for product in top_product_names:
 
-    daily_sales = df.groupby(['name','ds'])['quantity'].sum().reset_index()
-    avg_sales = daily_sales.groupby('name')['quantity'].mean()
+    print(f"Processing: {product}")
 
-    high_items = avg_sales[avg_sales >= 3].index
-    low_items  = avg_sales[avg_sales < 3].index
+    product_df = df[df['name'] == product]
 
-    print("High-volume items:", len(high_items))
-    print("Low-volume items:", len(low_items))
+    # =========================
+    # تجميع
+    # =========================
+    data = product_df.groupby(['date', 'time_period'], as_index=False).agg({
+        'quantity': 'sum',
+        'season': 'first',
+        'occasion': 'first'
+    })
 
-    overall_errors = []
+    data.columns = ['ds', 'time_period', 'y', 'season', 'occasion']
 
-  
-    for product in high_items:
+    # =========================
+    # إنشاء كل الفترات لكل يوم
+    # =========================
+    all_dates = pd.date_range(data['ds'].min(), data['ds'].max())
 
-        product_df = df[df['name'] == product].copy()
-        category = product_df['categ_EN'].iloc[0]
+    full_index = pd.MultiIndex.from_product(
+        [all_dates, time_order],
+        names=['ds', 'time_period']
+    )
 
-        product_df = product_df.groupby('ds')['quantity'].sum().reset_index()
-        product_df = product_df.set_index('ds').reindex(full_dates, fill_value=0).reset_index()
-        product_df.columns = ['ds','y']
+    data = data.drop_duplicates(subset=['ds', 'time_period'])
+    data = data.set_index(['ds', 'time_period']).reindex(full_index).reset_index()
 
-        if len(product_df) < 10:
-            continue
+    # =========================
+    # 🔥 تنظيف البيانات (أهم شيء)
+    # =========================
+    data['y'] = data['y'].fillna(0)
 
-        split = int(len(product_df) * 0.8)
-        train = product_df[:split]
-        test  = product_df[split:]
+    data[['season', 'occasion']] = data[['season', 'occasion']].ffill().bfill()
 
-        model = Prophet()
-        model.fit(train)
+    # حذف أي NaN متبقي
+    data = data.dropna(subset=['season', 'occasion'])
 
-        forecast_test = model.predict(test)
+    # =========================
+    # تحويل للمودل
+    # =========================
+    data['season'] = data['season'].astype('category').cat.codes
+    data['occasion'] = data['occasion'].astype('category').cat.codes
 
-        y_true = test['y'].values
-        y_pred = forecast_test['yhat'].values
+    data['time_period_code'] = data['time_period'].map(time_mapping)
 
-      
-        mask = y_true > 0
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
+    # حذف أي صف فيه مشكلة
+    data = data.dropna(subset=['y','season','occasion','time_period_code'])
 
-        mae = mean_absolute_error(y_true, y_pred)
-        avg_actual = np.mean(y_true)
-        error_percentage = (mae / avg_actual) * 100
+    # =========================
+    # تأكد البيانات كافية
+    # =========================
+    if len(data) < 10:
+        print(f"❌ Skipped {product} (data too small)")
+        continue
 
-        overall_errors.append(error_percentage)
+    # =========================
+    # Model (🔥 مستقر)
+    # =========================
+    model = Prophet(
+        daily_seasonality=True,
+        weekly_seasonality=True,
+        yearly_seasonality=False
+    )
 
-        print(f"{product} MAE: {round(mae,2)}")
-        print(f"{product} Error %: {round(error_percentage,1)}%\n")
+    model.add_regressor('season')
+    model.add_regressor('occasion')
+    model.add_regressor('time_period_code')
 
-      
-        future = model.make_future_dataframe(periods=7)
-        forecast = model.predict(future)
+    try:
+        model.fit(data[['ds', 'y', 'season', 'occasion', 'time_period_code']])
+    except:
+        print(f"❌ Model failed for {product}")
+        continue
 
-        future_preds = forecast[['ds','yhat','yhat_lower','yhat_upper']].tail(7)
+    # =========================
+    # Future
+    # =========================
+  # 🔥 نفس فكرة training (date × time_period)
+    future_dates = pd.date_range(
+      start=data['ds'].min(),
+      end=data['ds'].max() + pd.Timedelta(days=30)
+)
 
-        for _, row in future_preds.iterrows():
-            results.append({
-                "product": product,
-                "category": category,
-                "date": row['ds'],
-                "predicted_sales": max(row['yhat'], 0),  # clip
-                "lower_bound": max(row['yhat_lower'], 0),
-                "upper_bound": max(row['yhat_upper'], 0),
-                "type": "high_item_model",
-                "MAE": mae,
-                "Error_%": error_percentage
-            })
+    future = pd.MultiIndex.from_product(
+      [future_dates, time_order],
+      names=['ds', 'time_period']
+     ).to_frame(index=False)
 
-  
-    for category in df['categ_EN'].unique():
+    future['time_period_code'] = future['time_period'].map(time_mapping)
+    future['season'] = data['season'].iloc[-1]
+    future['occasion'] = data['occasion'].iloc[-1]
 
-        cat_df = df[df['categ_EN'] == category].copy()
-        cat_df = cat_df[cat_df['name'].isin(low_items)]
+    # =========================
+    # Predict
+    # =========================
+    forecast = model.predict(future)
+    forecast['time_period'] = future['time_period']
 
-        if cat_df.empty:
-            continue
+    # =========================
+    # Merge
+    # =========================
+    merged = forecast.merge(
+        data[['ds', 'time_period', 'y']],
+        on=['ds', 'time_period'],
+        how='left'
+    )
 
-        cat_daily = cat_df.groupby('ds')['quantity'].sum().reset_index()
-        cat_daily = cat_daily.set_index('ds').reindex(full_dates, fill_value=0).reset_index()
-        cat_daily.columns = ['ds','y']
+    merged['product'] = product
 
-        if len(cat_daily) < 10:
-            continue
+    merged['type'] = merged['y'].apply(
+        lambda x: 'actual' if pd.notna(x) else 'future'
+    )
 
-        split = int(len(cat_daily) * 0.8)
-        train = cat_daily[:split]
-        test  = cat_daily[split:]
+    merged['yhat'] = merged['yhat'].round().astype(int)
 
-        model = Prophet()
-        model.fit(train)
+    percentage_error = (
+        abs(merged['y'] - merged['yhat']) / merged['y']
+    ) * 100
 
-        forecast_test = model.predict(test)
+    percentage_error = percentage_error.replace([np.inf, -np.inf], np.nan)
 
-        y_true = test['y'].values
-        y_pred = forecast_test['yhat'].values
+    merged['percentage_error'] = percentage_error.round(0).astype('Int64').astype(str) + '%'
 
-     
-        mask = y_true > 0
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
+    merged = merged.drop_duplicates(subset=['ds', 'product', 'time_period'])
 
-        mae = mean_absolute_error(y_true, y_pred)
-        avg_actual = np.mean(y_true)
-        error_percentage = (mae / avg_actual) * 100
+    all_predictions.append(
+        merged[['ds','yhat','y','product','type','percentage_error','time_period']]
+    )
 
-        overall_errors.append(error_percentage)
+# =========================
+# Save
+# =========================
+predictions_df = pd.concat(all_predictions)
 
-        print(f"{category} MAE: {round(mae,2)}")
-        print(f"{category} Error %: {round(error_percentage,1)}%\n")
+predictions_df['time_period'] = pd.Categorical(
+    predictions_df['time_period'],
+    categories=time_order,
+    ordered=True
+)
 
-        future = model.make_future_dataframe(periods=7)
-        forecast = model.predict(future)
+predictions_df['product'] = pd.Categorical(
+    predictions_df['product'],
+    categories=top_product_names,
+    ordered=True
+)
 
-        future_preds = forecast[['ds','yhat','yhat_lower','yhat_upper']].tail(7)
+predictions_df = predictions_df.sort_values(
+    by=['product', 'ds', 'time_period']
+)
+# =========================
+# 🔥 إضافة MAE داخل الملف
+# =========================
 
-        product_dist = cat_df.groupby('name')['quantity'].sum()
-        product_dist = product_dist / product_dist.sum()
+# نحسب MAE من البيانات الفعلية فقط
+actual_data = predictions_df[predictions_df['type'] == 'actual']
 
-        for _, row in future_preds.iterrows():
-            for product, ratio in product_dist.items():
+mae_df = actual_data.groupby('product').apply(
+    lambda x: abs(x['y'] - x['yhat']).mean()
+).reset_index()
 
-                results.append({
-                    "product": product,
-                    "category": category,
-                    "date": row['ds'],
-                    "predicted_sales": max(row['yhat'] * ratio, 0),  # clip
-                    "lower_bound": max(row['yhat_lower'], 0),
-                    "upper_bound": max(row['yhat_upper'], 0),
-                    "type": "category_distribution",
-                    "MAE": mae,
-                    "Error_%": error_percentage
-                })
+mae_df.columns = ['product', 'MAE']
 
+# تقريب
+mae_df['MAE'] = mae_df['MAE'].round(2)
 
-    final_df = pd.DataFrame(results)
+# دمجه مع الملف الأساسي
+predictions_df = predictions_df.merge(mae_df, on='product', how='left')
 
-    final_df = final_df.sort_values(by=['product','date']).reset_index(drop=True)
+predictions_df.to_csv("all_products_predictions.csv", index=False)
 
-    final_df.to_csv("hybrid_forecast.csv", index=False)
-
-    print("Saved: hybrid_forecast.csv")
-
-    if overall_errors:
-        overall_avg = sum(overall_errors) / len(overall_errors)
-        print("\nOverall Error %:", round(overall_avg,1), "%")
-
-    return final_df
+print("✅ Done 100% بدون Errors 🔥")
 
 
 
-results = hybrid_forecast()
+# =========================
+# 🔥 Best Time per Product
+# =========================
 
-summary = results.groupby('product')['predicted_sales'].sum().reset_index()
-summary = summary.sort_values(by='predicted_sales', ascending=False)
+future_data = predictions_df[predictions_df['type'] == 'future']
 
-print("\nTop products (7-day forecast):")
-print(summary.head(10))
+best_time = future_data.groupby(['product','time_period'])['yhat'].mean().reset_index()
 
-summary.to_csv("top_products_7days.csv", index=False)
+best_time = best_time.sort_values(['product','yhat'], ascending=[True, False])
 
-print("\nSample predictions:")
-print(results.head(10))
+best_time = best_time.drop_duplicates('product')
+
+# ✅ التقريب هنا
+best_time['yhat'] = best_time['yhat'].round().astype(int)
+
+best_time.to_csv("best_time_per_product.csv", index=False)
+
+print("✅ Best time file created!")
+
+# =========================
+# 🔥 Future Predictions Only
+# =========================
+
+# نأخذ فقط التنبؤات (future)
+future_only = predictions_df[predictions_df['type'] == 'future']
+
+# اختيار الأعمدة المهمة
+future_only = future_only[['ds','product','time_period','yhat']]
+
+# إعادة تسمية العمود
+future_only.rename(columns={'yhat': 'predicted_quantity'}, inplace=True)
+
+# تقريب القيم
+future_only['predicted_quantity'] = future_only['predicted_quantity'].round().astype(int)
+
+# ترتيب البيانات (🔥 مهم)
+future_only['time_period'] = pd.Categorical(
+    future_only['time_period'],
+    categories=['morning','Afternoon','Evening','night'],
+    ordered=True
+)
+
+future_only = future_only.sort_values(by=['product','ds','time_period'])
+
+# حفظ الملف
+future_only.to_csv("future_predictions_only.csv", index=False)
+
+print("✅ Future predictions file created!")
+
+# =========================
+# 🔥 Best Month per Product
+# =========================
+
+# نستخدم التنبؤ فقط
+future_data = predictions_df[predictions_df['type'] == 'future']
+
+# استخراج الشهر من التاريخ
+future_data['month'] = pd.to_datetime(future_data['ds']).dt.month
+
+# حساب مجموع المبيعات لكل شهر لكل منتج
+monthly_sales = future_data.groupby(['product','month'])['yhat'].sum().reset_index()
+
+# ترتيب من الأعلى
+monthly_sales = monthly_sales.sort_values(['product','yhat'], ascending=[True, False])
+
+# اختيار أفضل شهر لكل منتج
+best_month = monthly_sales.drop_duplicates('product')
+
+# تقريب القيم
+best_month['yhat'] = best_month['yhat'].round().astype(int)
+
+# تغيير أسماء الأعمدة
+best_month.rename(columns={
+    'month': 'best_month',
+    'yhat': 'total_predicted_sales'
+}, inplace=True)
+
+# حفظ الملف
+best_month.to_csv("best_month_per_product.csv", index=False)
+
+print("✅ Best month file created!")
