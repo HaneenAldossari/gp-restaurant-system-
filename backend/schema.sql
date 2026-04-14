@@ -10,9 +10,16 @@ CREATE TABLE users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'manager' CHECK (role IN ('admin', 'manager')),
+    role VARCHAR(20) NOT NULL DEFAULT 'manager'
+        CHECK (role IN ('admin', 'manager', 'sub_user')),
+    parent_id INT REFERENCES users(id) ON DELETE CASCADE,
+    permission VARCHAR(20)
+        CHECK (permission IN ('read_only', 'write_only', 'read_write')),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Index to quickly find all sub-users of a given manager
+CREATE INDEX idx_users_parent_id ON users(parent_id);
 
 -- 2. Uploads
 CREATE TABLE uploads (
