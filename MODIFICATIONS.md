@@ -1,6 +1,36 @@
 # Modifications — 2026-04-14
 
-## Latest update (Noura's new model integrated)
+## Latest updates (after Noura's model integration)
+
+### What-If price simulator (commit f181c8f)
+- New endpoint `GET /api/menu-engineering/simulate?target=<product>&new_price=<value>`
+- Uses constant-elasticity demand: `new_qty = old_qty × (new_price/old_price)^(-1.5)`
+- Returns current state, simulated state, percentage deltas, and the
+  Boston Matrix classification change (e.g. "Plowhorse → Star").
+- Elasticity hardcoded at -1.5; per-category elasticities are roadmap.
+
+### Upload dedup, predictions cache, HTTP errors (commit 546f380)
+- Re-uploading the same file no longer duplicates `order_items`. The
+  upload now wipes existing items on touched orders and re-inserts them.
+- Forecast predictions are pickled to `backend/cache/predictions.pkl`
+  after the first run. Subsequent server starts load in ~50 ms instead
+  of retraining (~25 s). Cache is invalidated on every upload.
+- All endpoints now raise `HTTPException` with proper status codes:
+  400 (bad input), 404 (not found), 409 (no enriched data), 500 (caught
+  by global handler).
+
+### Auto-enrichment at upload (commit a02d089)
+- The upload endpoint now computes `time_period`, `season`, and
+  `occasion` automatically from `order_datetime` when the file doesn't
+  contain them.
+- Uses `hijri-converter` to detect Ramadan, Eid al-Fitr, Eid al-Adha
+  + Saudi National Day + weekend logic.
+- Means a raw POS export (without enrichment columns) is now sufficient
+  for forecasting — Noura's model gets the regressors it needs.
+
+---
+
+## Earlier (Noura's new model integrated)
 
 `prophet_model.py` was updated to Noura's latest version (commit f9730c9 on
 main, 2026-04-14). Her ML logic is unchanged. Wrappers around it were rebuilt:
