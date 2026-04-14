@@ -1,369 +1,291 @@
 """
 Forecasting API — /api/forecast/item, /api/forecast/category, /api/forecast/total
 
-Uses Noura's hybrid Prophet model from backend/prophet_model.py verbatim.
-The ONLY modification is the data source: PostgreSQL instead of Excel.
-
-Noura's original logic is preserved exactly:
-  - High-volume items (avg daily qty >= 3): per-product Prophet with 80/20 split
-  - Low-volume items (avg daily qty < 3): per-category Prophet, distributed
-    across products by historical sales share
-  - 7-day forecast horizon extending from the end of the training data
-
-Results are cached in-memory after first computation AND persisted to the
-`forecasts` table so repeat calls return instantly.
+Calls Noura's run_forecast() function from prophet_model.py with PostgreSQL data.
+The ML logic itself is untouched in prophet_model.py — this file only:
+  - Loads sales rows from PostgreSQL via data_loader_db
+  - Reshapes them into the columns Noura's function expects
+  - Caches the resulting predictions DataFrame in memory + persists once to
+    the `forecasts` table
+  - Slices the predictions per endpoint (item / category / total)
 """
 
 import json
 import threading
-from datetime import date
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Query
-from prophet import Prophet
-from sklearn.metrics import mean_absolute_error
 from sqlalchemy import text
 
 from data_loader_db import load_data
 from db import get_engine
+from prophet_model import run_forecast
 
 router = APIRouter(tags=["Forecasting"])
 
 DEFAULT_USER_ID = 1
-_cache: dict[int, pd.DataFrame] = {}  # periods -> results DataFrame
+_predictions_cache: pd.DataFrame | None = None
+_category_lookup: dict[str, str] = {}  # product -> category
+_data_end_date: pd.Timestamp | None = None  # last actual sale date in the data
 _cache_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Noura's hybrid_forecast() — adapted to read from PostgreSQL (DataFrame
-# input) instead of pd.read_excel(). Logic is otherwise identical.
+# Cache management
 # ─────────────────────────────────────────────────────────────────────────
-def hybrid_forecast(df: pd.DataFrame, periods: int = 7) -> pd.DataFrame:
+def _build_input_frame() -> tuple[pd.DataFrame, dict[str, str]]:
     """
-    Run Noura's hybrid Prophet forecasting.
-
-    `df` must contain columns: name, ds, quantity, categ_EN. In this system
-    the DataFrame comes from PostgreSQL via data_loader_db.load_data(); the
-    columns are renamed before calling this function.
+    Pull sales from PostgreSQL and shape them for Noura's run_forecast().
+    Returns (model_input_df, product_to_category_map).
     """
-    df = df.copy()
-    df["ds"] = pd.to_datetime(df["ds"])
-
-    full_dates = pd.date_range(start=df["ds"].min(), end=df["ds"].max(), freq="D")
-
-    results = []
-
-    daily_sales = df.groupby(["name", "ds"])["quantity"].sum().reset_index()
-    avg_sales = daily_sales.groupby("name")["quantity"].mean()
-
-    high_items = avg_sales[avg_sales >= 3].index
-    low_items = avg_sales[avg_sales < 3].index
-
-    print("High-volume items:", len(high_items))
-    print("Low-volume items:", len(low_items))
-
-    overall_errors = []
-
-    # ── High-volume items: per-product Prophet ──
-    for product in high_items:
-        product_df = df[df["name"] == product].copy()
-        category = product_df["categ_EN"].iloc[0]
-
-        product_df = product_df.groupby("ds")["quantity"].sum().reset_index()
-        product_df = product_df.set_index("ds").reindex(full_dates, fill_value=0).reset_index()
-        product_df.columns = ["ds", "y"]
-
-        if len(product_df) < 10:
-            continue
-
-        split = int(len(product_df) * 0.8)
-        train = product_df[:split]
-        test = product_df[split:]
-
-        model = Prophet()
-        model.fit(train)
-
-        forecast_test = model.predict(test)
-
-        y_true = test["y"].values
-        y_pred = forecast_test["yhat"].values
-
-        mask = y_true > 0
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
-
-        if len(y_true) == 0:
-            continue
-
-        mae = mean_absolute_error(y_true, y_pred)
-        avg_actual = np.mean(y_true)
-        error_percentage = (mae / avg_actual) * 100 if avg_actual > 0 else 0
-
-        overall_errors.append(error_percentage)
-
-        future = model.make_future_dataframe(periods=periods)
-        forecast = model.predict(future)
-        future_preds = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(periods)
-
-        for _, row in future_preds.iterrows():
-            results.append({
-                "product": product,
-                "category": category,
-                "date": row["ds"],
-                "predicted_sales": max(row["yhat"], 0),
-                "lower_bound": max(row["yhat_lower"], 0),
-                "upper_bound": max(row["yhat_upper"], 0),
-                "type": "high_item_model",
-                "MAE": float(mae),
-                "Error_%": float(error_percentage),
-            })
-
-    # ── Low-volume items: per-category Prophet, distributed by product share ──
-    for category in df["categ_EN"].unique():
-        cat_df = df[df["categ_EN"] == category].copy()
-        cat_df = cat_df[cat_df["name"].isin(low_items)]
-
-        if cat_df.empty:
-            continue
-
-        cat_daily = cat_df.groupby("ds")["quantity"].sum().reset_index()
-        cat_daily = cat_daily.set_index("ds").reindex(full_dates, fill_value=0).reset_index()
-        cat_daily.columns = ["ds", "y"]
-
-        if len(cat_daily) < 10:
-            continue
-
-        split = int(len(cat_daily) * 0.8)
-        train = cat_daily[:split]
-        test = cat_daily[split:]
-
-        model = Prophet()
-        model.fit(train)
-
-        forecast_test = model.predict(test)
-
-        y_true = test["y"].values
-        y_pred = forecast_test["yhat"].values
-
-        mask = y_true > 0
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
-
-        if len(y_true) == 0:
-            continue
-
-        mae = mean_absolute_error(y_true, y_pred)
-        avg_actual = np.mean(y_true)
-        error_percentage = (mae / avg_actual) * 100 if avg_actual > 0 else 0
-
-        overall_errors.append(error_percentage)
-
-        future = model.make_future_dataframe(periods=periods)
-        forecast = model.predict(future)
-        future_preds = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(periods)
-
-        product_dist = cat_df.groupby("name")["quantity"].sum()
-        product_dist = product_dist / product_dist.sum()
-
-        for _, row in future_preds.iterrows():
-            for product, ratio in product_dist.items():
-                results.append({
-                    "product": product,
-                    "category": category,
-                    "date": row["ds"],
-                    "predicted_sales": max(row["yhat"] * ratio, 0),
-                    "lower_bound": max(row["yhat_lower"], 0),
-                    "upper_bound": max(row["yhat_upper"], 0),
-                    "type": "category_distribution",
-                    "MAE": float(mae),
-                    "Error_%": float(error_percentage),
-                })
-
-    final_df = pd.DataFrame(results)
-    if not final_df.empty:
-        final_df = final_df.sort_values(by=["product", "date"]).reset_index(drop=True)
-
-    if overall_errors:
-        overall_avg = sum(overall_errors) / len(overall_errors)
-        print("Overall Error %:", round(overall_avg, 1), "%")
-
-    return final_df
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Cache — load Noura's predictions once, reuse for all endpoints
-# ─────────────────────────────────────────────────────────────────────────
-def _load_db_frame() -> pd.DataFrame:
-    """Pull sales from PostgreSQL and shape it for hybrid_forecast()."""
     df = load_data()
-    return pd.DataFrame({
-        "ds": df["Order Date"],
-        "name": df["Product"],
-        "quantity": df["Quantity"],
-        "categ_EN": df["Category"],
+
+    # Drop rows missing the columns Noura's model needs
+    needed = df.dropna(subset=["time_period", "season", "occasion"]).copy()
+
+    model_df = pd.DataFrame({
+        "name": needed["Product"],
+        "date": needed["Order Date"],
+        "quantity": needed["Quantity"],
+        "season": needed["season"],
+        "occasion": needed["occasion"],
+        "time_period": needed["time_period"],
     })
 
+    cat_map = (
+        df[["Product", "Category"]]
+        .drop_duplicates()
+        .set_index("Product")["Category"]
+        .to_dict()
+    )
+    return model_df, cat_map
 
-def _get_predictions(periods: int) -> pd.DataFrame:
-    """Return the full predictions DataFrame for a horizon; compute if missing."""
+
+def _get_predictions() -> pd.DataFrame:
+    """Return cached predictions, computing them on first call."""
+    global _predictions_cache, _category_lookup, _data_end_date
     with _cache_lock:
-        if periods in _cache:
-            return _cache[periods]
+        if _predictions_cache is not None:
+            return _predictions_cache
 
-        df = _load_db_frame()
-        predictions = hybrid_forecast(df, periods=periods)
-        _cache[periods] = predictions
-        _persist_cache(predictions, periods)
+        model_df, cat_map = _build_input_frame()
+        if model_df.empty:
+            raise RuntimeError(
+                "No data available with season/occasion/time_period populated. "
+                "Re-upload the sales file via /api/upload."
+            )
+
+        _data_end_date = pd.to_datetime(model_df["date"]).max()
+        predictions = run_forecast(model_df, save_csv=False)
+        _predictions_cache = predictions
+        _category_lookup = cat_map
+        _persist_run(predictions)
         return predictions
 
 
-def _persist_cache(predictions: pd.DataFrame, periods: int) -> None:
-    """Write a single 'total' entry into the forecasts table for audit/history."""
+def _slice_future(preds: pd.DataFrame, period: int) -> pd.DataFrame:
+    """Take only future predictions starting AFTER the global data end date."""
+    if _data_end_date is None:
+        return preds[preds["type"] == "future"].copy()
+    fut = preds[preds["ds"] > _data_end_date].copy()
+    if period:
+        cutoff = _data_end_date + pd.Timedelta(days=period)
+        fut = fut[fut["ds"] <= cutoff]
+    return fut
+
+
+def _persist_run(predictions: pd.DataFrame) -> None:
+    """Save one summary row to the forecasts table for audit/history."""
     if predictions.empty:
         return
-    payload = predictions.assign(date=predictions["date"].astype(str)).to_dict(orient="records")
     metrics = {
-        "mean_error_pct": float(predictions["Error_%"].mean()) if "Error_%" in predictions else None,
+        "n_products": int(predictions["product"].nunique()),
         "n_rows": int(len(predictions)),
+        "mean_mae": float(predictions["MAE"].dropna().mean()) if "MAE" in predictions else None,
     }
     q = text("""
         INSERT INTO forecasts
             (user_id, target_type, target_id, train_start, train_end,
              horizon_days, model_used, metrics_json, result_json)
         VALUES
-            (:uid, 'total', NULL, :ts, :te, :h, 'Prophet', CAST(:m AS JSONB), CAST(:r AS JSONB))
+            (:uid, 'total', NULL, :ts, :te, 30, 'Prophet+regressors',
+             CAST(:m AS JSONB), CAST('{}' AS JSONB))
     """)
     with get_engine().begin() as conn:
         conn.execute(q, {
             "uid": DEFAULT_USER_ID,
-            "ts": predictions["date"].min(),
-            "te": predictions["date"].max(),
-            "h": periods,
+            "ts": predictions["ds"].min(),
+            "te": predictions["ds"].max(),
             "m": json.dumps(metrics),
-            "r": json.dumps(payload, default=str),
         })
 
 
 def invalidate_cache() -> None:
-    """Clear cached predictions (call after a new upload)."""
+    """Clear the cache. Called by the upload endpoint after new data lands."""
+    global _predictions_cache, _category_lookup, _data_end_date
     with _cache_lock:
-        _cache.clear()
+        _predictions_cache = None
+        _category_lookup = {}
+        _data_end_date = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# ENDPOINTS
+# Helpers to slice predictions into API responses
 # ─────────────────────────────────────────────────────────────────────────
-@router.get("/api/forecast/item", summary="Forecast a single menu item")
-def forecast_item(
-    target: str = Query(..., description="Product name (exact match)"),
-    period: int = Query(7, description="Forecast horizon in days"),
-):
-    """Forecast daily sales quantity for a specific item using Noura's hybrid model."""
-    preds = _get_predictions(period)
-    rows = preds[preds["product"] == target]
-    if rows.empty:
-        return {"error": f"Product '{target}' not found in forecast output"}
-
-    category = rows["category"].iloc[0]
-    daily = [
+def _serialize_rows(rows: pd.DataFrame, only_future: bool = True) -> list[dict[str, Any]]:
+    if only_future:
+        rows = rows[rows["type"] == "future"]
+    return [
         {
-            "date": str(r["date"].date() if hasattr(r["date"], "date") else r["date"])[:10],
-            "predicted_sales": round(float(r["predicted_sales"]), 2),
-            "lower_bound": round(float(r["lower_bound"]), 2),
-            "upper_bound": round(float(r["upper_bound"]), 2),
+            "date": str(r["ds"].date() if hasattr(r["ds"], "date") else r["ds"])[:10],
+            "time_period": str(r["time_period"]),
+            "predicted_quantity": int(r["yhat"]),
         }
         for _, r in rows.iterrows()
     ]
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# Endpoints
+# ─────────────────────────────────────────────────────────────────────────
+@router.get("/api/forecast/item", summary="Forecast a single menu item")
+def forecast_item(
+    target: str = Query(..., description="Product name (exact match)"),
+    period: int = Query(7, description="Forecast horizon in days (1-30, model produces 30)"),
+):
+    """
+    Per-item forecast using Noura's hybrid Prophet model. Returns predictions
+    aggregated daily plus the time_period breakdown (morning/afternoon/evening/night).
+    """
+    try:
+        preds = _get_predictions()
+    except RuntimeError as e:
+        return {"error": str(e)}
+
+    item_rows = preds[preds["product"] == target]
+    if item_rows.empty:
+        return {"error": f"Product '{target}' not in forecast output"}
+
+    future = _slice_future(item_rows, period)
+
+    daily = (
+        future.groupby(future["ds"].astype(str))["yhat"]
+        .sum()
+        .reset_index()
+        .rename(columns={"ds": "date", "yhat": "predicted_quantity"})
+    )
+
     return {
         "scope": "item",
         "target": target,
-        "category": category,
+        "category": _category_lookup.get(target),
         "period": period,
-        "model": rows["type"].iloc[0],
-        "mae": round(float(rows["MAE"].iloc[0]), 2),
-        "errorPct": round(float(rows["Error_%"].iloc[0]), 2),
-        "totalPredictedSales": round(float(rows["predicted_sales"].sum()), 2),
-        "dailyPredictions": daily,
+        "model": "Prophet+regressors",
+        "mae": float(item_rows["MAE"].iloc[0]) if pd.notna(item_rows["MAE"].iloc[0]) else None,
+        "totalPredictedQuantity": int(future["yhat"].sum()),
+        "dailyPredictions": [
+            {"date": r["date"], "predicted_quantity": int(r["predicted_quantity"])}
+            for _, r in daily.iterrows()
+        ],
+        "timePeriodBreakdown": _serialize_rows(future, only_future=False),
     }
 
 
-@router.get("/api/forecast/category", summary="Forecast a category")
+@router.get("/api/forecast/category", summary="Forecast all items in a category")
 def forecast_category(
     target: str = Query(..., description="Category name (e.g. 'Hot Drinks')"),
-    period: int = Query(7, description="Forecast horizon in days"),
+    period: int = Query(7, description="Forecast horizon in days (1-30)"),
 ):
-    """Aggregate every item in the category, sort by predicted revenue."""
-    preds = _get_predictions(period)
-    rows = preds[preds["category"] == target]
-    if rows.empty:
-        return {"error": f"Category '{target}' not found in forecast output"}
+    """Aggregate every item in the category, sort by predicted quantity."""
+    try:
+        preds = _get_predictions()
+    except RuntimeError as e:
+        return {"error": str(e)}
 
-    per_product = rows.groupby("product").agg(
-        totalPredictedSales=("predicted_sales", "sum"),
-        modelType=("type", "first"),
-    ).reset_index().sort_values("totalPredictedSales", ascending=False)
+    products_in_cat = [p for p, c in _category_lookup.items() if c == target]
+    if not products_in_cat:
+        return {"error": f"Category '{target}' not found"}
 
-    daily_totals = rows.groupby("date")["predicted_sales"].sum().reset_index()
+    cat_rows = _slice_future(preds[preds["product"].isin(products_in_cat)], period)
+
+    per_product = (
+        cat_rows.groupby("product")["yhat"]
+        .sum()
+        .reset_index()
+        .sort_values("yhat", ascending=False)
+        .rename(columns={"yhat": "totalPredictedQuantity"})
+    )
+
+    daily_totals = (
+        cat_rows.groupby(cat_rows["ds"].astype(str))["yhat"]
+        .sum()
+        .reset_index()
+        .rename(columns={"ds": "date", "yhat": "predicted_quantity"})
+    )
 
     return {
         "scope": "category",
         "target": target,
         "period": period,
         "itemCount": int(per_product.shape[0]),
-        "totalPredictedSales": round(float(rows["predicted_sales"].sum()), 2),
+        "totalPredictedQuantity": int(cat_rows["yhat"].sum()),
         "items": [
-            {
-                "name": r["product"],
-                "totalPredictedSales": round(float(r["totalPredictedSales"]), 2),
-                "model": r["modelType"],
-            }
+            {"name": r["product"], "totalPredictedQuantity": int(r["totalPredictedQuantity"])}
             for _, r in per_product.iterrows()
         ],
         "chartData": [
-            {
-                "date": str(r["date"].date() if hasattr(r["date"], "date") else r["date"])[:10],
-                "predicted": round(float(r["predicted_sales"]), 2),
-            }
+            {"date": r["date"], "predicted": int(r["predicted_quantity"])}
             for _, r in daily_totals.iterrows()
         ],
     }
 
 
 @router.get("/api/forecast/total", summary="Forecast total restaurant sales")
-def forecast_total(period: int = Query(7, description="Forecast horizon in days")):
-    """Grand total across all products."""
-    preds = _get_predictions(period)
-    if preds.empty:
-        return {"error": "No forecast data available"}
+def forecast_total(period: int = Query(7, description="Forecast horizon in days (1-30)")):
+    """Grand total across every product."""
+    try:
+        preds = _get_predictions()
+    except RuntimeError as e:
+        return {"error": str(e)}
 
-    per_category = preds.groupby("category").agg(
-        totalPredictedSales=("predicted_sales", "sum"),
-        itemCount=("product", "nunique"),
-    ).reset_index().sort_values("totalPredictedSales", ascending=False)
+    future = _slice_future(preds, period)
+    future["category"] = future["product"].map(_category_lookup)
 
-    daily_totals = preds.groupby("date")["predicted_sales"].sum().reset_index()
+    per_category = (
+        future.groupby("category")
+        .agg(
+            totalPredictedQuantity=("yhat", "sum"),
+            itemCount=("product", "nunique"),
+        )
+        .reset_index()
+        .sort_values("totalPredictedQuantity", ascending=False)
+    )
+
+    daily_totals = (
+        future.groupby(future["ds"].astype(str))["yhat"]
+        .sum()
+        .reset_index()
+        .rename(columns={"ds": "date", "yhat": "predicted_quantity"})
+    )
 
     return {
         "scope": "total",
         "period": period,
-        "totalPredictedSales": round(float(preds["predicted_sales"].sum()), 2),
+        "totalPredictedQuantity": int(future["yhat"].sum()),
         "categoryCount": int(per_category.shape[0]),
-        "itemCount": int(preds["product"].nunique()),
+        "itemCount": int(future["product"].nunique()),
         "categories": [
             {
                 "name": r["category"],
-                "totalPredictedSales": round(float(r["totalPredictedSales"]), 2),
+                "totalPredictedQuantity": int(r["totalPredictedQuantity"]),
                 "itemCount": int(r["itemCount"]),
             }
             for _, r in per_category.iterrows()
         ],
         "chartData": [
-            {
-                "date": str(r["date"].date() if hasattr(r["date"], "date") else r["date"])[:10],
-                "predicted": round(float(r["predicted_sales"]), 2),
-            }
+            {"date": r["date"], "predicted": int(r["predicted_quantity"])}
             for _, r in daily_totals.iterrows()
         ],
     }

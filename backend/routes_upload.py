@@ -83,6 +83,9 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     col_name_en = _pick_col(df, ["name", "name_en", "product_name", "Product"])
     col_name_ar = _pick_col(df, ["name_localized", "name_ar", "arabic_name"])
     col_customer = _pick_col(df, ["customer_name", "customer", "Customer"])
+    col_season = _pick_col(df, ["season", "Season"])
+    col_occasion = _pick_col(df, ["occasion", "Occasion"])
+    col_time_period = _pick_col(df, ["time_period", "timePeriod", "time_zone"])
 
     must = {"order_reference": col_order_ref, "quantity": col_qty,
             "unit_price": col_price, "unit_cost": col_cost, "categ_EN": col_cat_en}
@@ -105,11 +108,25 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     norm["name_en"] = df[col_name_en].astype(str).str.strip() if col_name_en else norm["sku"]
     norm["name_ar"] = df[col_name_ar].astype(str).str.strip() if col_name_ar else norm["name_en"]
     norm["customer_name"] = df[col_customer] if col_customer else None
+    norm["season"] = df[col_season].astype(str).str.strip() if col_season else None
+    norm["occasion"] = df[col_occasion].astype(str).str.strip() if col_occasion else None
+    norm["time_period"] = df[col_time_period].astype(str).str.strip().str.lower() if col_time_period else None
 
     try:
         norm["order_datetime"] = _build_datetime(df)
     except Exception as e:
         return {"success": False, "error": str(e), "columnsFound": original_cols}
+
+    # If time_period is missing, derive it from the hour of order_datetime
+    if col_time_period is None:
+        def _bucket(h):
+            if pd.isna(h): return None
+            h = int(h)
+            if 5 <= h <= 11: return "morning"
+            if 12 <= h <= 16: return "Afternoon"
+            if 17 <= h <= 21: return "Evening"
+            return "night"
+        norm["time_period"] = norm["order_datetime"].dt.hour.apply(_bucket)
 
     # Filter out invalid rows
     total_rows = len(norm)
@@ -167,17 +184,24 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
         # Orders
-        orders_df = norm[["order_reference", "order_datetime", "customer_name"]].drop_duplicates()
+        orders_df = norm[["order_reference", "order_datetime", "customer_name",
+                          "time_period", "season", "occasion"]].drop_duplicates(subset=["order_reference"])
         for _, r in orders_df.iterrows():
             conn.execute(
                 text("""
-                    INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name)
-                    VALUES (:uid, :oref, :odt, :cname)
+                    INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
+                                        time_period, season, occasion)
+                    VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
                     ON CONFLICT (order_reference) DO UPDATE SET
                         order_datetime = EXCLUDED.order_datetime,
-                        customer_name = EXCLUDED.customer_name
+                        customer_name = EXCLUDED.customer_name,
+                        time_period = EXCLUDED.time_period,
+                        season = EXCLUDED.season,
+                        occasion = EXCLUDED.occasion
                 """),
-                {"uid": upload_id, "oref": r["order_reference"], "odt": r["order_datetime"], "cname": r["customer_name"]},
+                {"uid": upload_id, "oref": r["order_reference"], "odt": r["order_datetime"],
+                 "cname": r["customer_name"], "tp": r["time_period"],
+                 "sn": r["season"], "oc": r["occasion"]},
             )
         order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 

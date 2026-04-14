@@ -55,7 +55,10 @@ CREATE TABLE orders (
     upload_id INT NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
     order_reference VARCHAR(50) UNIQUE NOT NULL,
     order_datetime TIMESTAMP NOT NULL,
-    customer_name VARCHAR(100)
+    customer_name VARCHAR(100),
+    time_period VARCHAR(20),     -- morning / afternoon / evening / night
+    season VARCHAR(20),          -- Winter / Spring / Summer / Autumn
+    occasion VARCHAR(50)         -- Normal Day / Ramadan / Eid / etc.
 );
 
 -- 6. Order Items

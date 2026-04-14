@@ -12,7 +12,10 @@ SELECT
     oi.unit_cost          AS unit_cost,
     p.name_en             AS "Product",
     c.name_en             AS "Category",
-    o.order_reference     AS "Order ID"
+    o.order_reference     AS "Order ID",
+    o.time_period         AS time_period,
+    o.season              AS season,
+    o.occasion            AS occasion
 FROM order_items oi
 JOIN orders     o ON oi.order_id    = o.id
 JOIN products   p ON oi.product_id  = p.id

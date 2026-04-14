@@ -1,5 +1,68 @@
 # Modifications — 2026-04-14
 
+## Latest update (Noura's new model integrated)
+
+`prophet_model.py` was updated to Noura's latest version (commit f9730c9 on
+main, 2026-04-14). Her ML logic is unchanged. Wrappers around it were rebuilt:
+
+- **schema.sql** — `orders` table now has `time_period`, `season`, `occasion`
+  columns to support the regressors her model uses.
+- **routes_upload.py** — detects season/occasion/time_period in the uploaded
+  file and writes them to `orders`. If `time_period` is missing, it is derived
+  from the order hour (morning / Afternoon / Evening / night).
+- **data_loader_db.py** — surfaces the three new columns in the shared
+  DataFrame.
+- **prophet_model.py** — Noura's script body is wrapped in a function
+  `run_forecast(df, save_csv=False)`. Original behaviour preserved when run
+  directly (`python prophet_model.py` still reads the Excel and writes the four
+  CSVs). No model parameters or regressors changed.
+- **routes_forecast.py** — calls `run_forecast()` once on first request,
+  caches the predictions DataFrame in memory, and slices it per endpoint.
+
+### Forecast API response shapes (frontend reference)
+
+`GET /api/forecast/item?target=Spanish%20latte&period=7`
+```json
+{
+  "scope": "item", "target": "Spanish latte", "category": "Cold Coffee Drinks",
+  "period": 7, "model": "Prophet+regressors", "mae": 2.83,
+  "totalPredictedQuantity": 67,
+  "dailyPredictions": [{"date": "2022-12-28", "predicted_quantity": 8}, ...],
+  "timePeriodBreakdown": [
+    {"date": "2022-12-28", "time_period": "morning", "predicted_quantity": 0},
+    {"date": "2022-12-28", "time_period": "Afternoon", "predicted_quantity": 1}, ...
+  ]
+}
+```
+
+`GET /api/forecast/category?target=Hot%20Drinks&period=7`
+```json
+{
+  "scope": "category", "target": "Hot Drinks", "period": 7,
+  "itemCount": 37, "totalPredictedQuantity": 125,
+  "items": [{"name": "Saudi Coffee - Small pot", "totalPredictedQuantity": 18}, ...],
+  "chartData": [{"date": "2022-12-28", "predicted": 17}, ...]
+}
+```
+
+`GET /api/forecast/total?period=7`
+```json
+{
+  "scope": "total", "period": 7, "totalPredictedQuantity": 988,
+  "categoryCount": 8, "itemCount": 119,
+  "categories": [{"name": "Espresso Drinks", "totalPredictedQuantity": 245, "itemCount": 12}, ...],
+  "chartData": [{"date": "2022-12-28", "predicted": 125}, ...]
+}
+```
+
+Note: forecast dates are `data_end_date + 1` through `+ period` days. With the
+sample 2022 dataset this is 2022-12-28 onwards. After uploading newer data,
+the forecast window shifts to start after the newest date.
+
+---
+
+# Original — 2026-04-14
+
 Branch: `backend-v2` (not yet merged to `main`)
 
 ## Summary
