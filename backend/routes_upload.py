@@ -49,6 +49,69 @@ def _build_datetime(df: pd.DataFrame) -> pd.Series:
     raise RuntimeError("No usable date/time columns found")
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Auto-enrichment — compute time_period, season, occasion when the upload
+# file doesn't contain them. This is the "Enrich Data" step from the
+# system use case diagram.
+# ─────────────────────────────────────────────────────────────────────────
+def _bucket_time_period(hour) -> str | None:
+    if pd.isna(hour):
+        return None
+    h = int(hour)
+    if 5 <= h <= 11: return "morning"
+    if 12 <= h <= 16: return "Afternoon"
+    if 17 <= h <= 21: return "Evening"
+    return "night"
+
+
+def _compute_season(dt) -> str | None:
+    if pd.isna(dt):
+        return None
+    m = pd.Timestamp(dt).month
+    if m in (12, 1, 2): return "Winter"
+    if m in (3, 4, 5):  return "Spring"
+    if m in (6, 7, 8):  return "Summer"
+    return "Autumn"
+
+
+def _compute_occasion(dt) -> str:
+    """
+    Determine occasion from the date:
+      - Saudi National Day (Sep 23)
+      - Ramadan (whole Hijri month 9)
+      - Eid al-Fitr (Hijri 10/1 - 10/3)
+      - Eid al-Adha (Hijri 12/10 - 12/13)
+      - Weekend (Friday/Saturday in Saudi Arabia)
+      - Normal Day (default)
+    """
+    if pd.isna(dt):
+        return "Normal Day"
+    d = pd.Timestamp(dt).date()
+
+    # National Day
+    if d.month == 9 and d.day == 23:
+        return "National Day"
+
+    # Hijri-based holidays
+    try:
+        from hijri_converter import Gregorian
+        h = Gregorian(d.year, d.month, d.day).to_hijri()
+        if h.month == 9:
+            return "Ramadan"
+        if h.month == 10 and h.day in (1, 2, 3):
+            return "Eid al-Fitr"
+        if h.month == 12 and h.day in (10, 11, 12, 13):
+            return "Eid al-Adha"
+    except Exception:
+        pass
+
+    # Saudi weekend = Friday (4) and Saturday (5)
+    if d.weekday() in (4, 5):
+        return "Weekend"
+
+    return "Normal Day"
+
+
 @router.post("/api/upload", summary="Upload sales data and save to PostgreSQL")
 async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     """
@@ -110,23 +173,35 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     norm["customer_name"] = df[col_customer] if col_customer else None
     norm["season"] = df[col_season].astype(str).str.strip() if col_season else None
     norm["occasion"] = df[col_occasion].astype(str).str.strip() if col_occasion else None
-    norm["time_period"] = df[col_time_period].astype(str).str.strip().str.lower() if col_time_period else None
+    norm["time_period"] = df[col_time_period].astype(str).str.strip() if col_time_period else None
 
     try:
         norm["order_datetime"] = _build_datetime(df)
     except Exception as e:
         return {"success": False, "error": str(e), "columnsFound": original_cols}
 
-    # If time_period is missing, derive it from the hour of order_datetime
-    if col_time_period is None:
-        def _bucket(h):
-            if pd.isna(h): return None
-            h = int(h)
-            if 5 <= h <= 11: return "morning"
-            if 12 <= h <= 16: return "Afternoon"
-            if 17 <= h <= 21: return "Evening"
-            return "night"
-        norm["time_period"] = norm["order_datetime"].dt.hour.apply(_bucket)
+    # ── Auto-enrichment: fill any missing season / occasion / time_period
+    #    by computing them from order_datetime. Always overwrites obviously
+    #    invalid values like the literal strings "nan" / empty / None.
+    def _is_blank(v):
+        return v is None or (isinstance(v, str) and v.strip().lower() in ("", "nan", "none", "null"))
+
+    enriched_counts = {"time_period": 0, "season": 0, "occasion": 0}
+
+    if col_time_period is None or norm["time_period"].apply(_is_blank).any():
+        mask = norm["time_period"].apply(_is_blank) if col_time_period else pd.Series(True, index=norm.index)
+        norm.loc[mask, "time_period"] = norm.loc[mask, "order_datetime"].dt.hour.apply(_bucket_time_period)
+        enriched_counts["time_period"] = int(mask.sum())
+
+    if col_season is None or norm["season"].apply(_is_blank).any():
+        mask = norm["season"].apply(_is_blank) if col_season else pd.Series(True, index=norm.index)
+        norm.loc[mask, "season"] = norm.loc[mask, "order_datetime"].apply(_compute_season)
+        enriched_counts["season"] = int(mask.sum())
+
+    if col_occasion is None or norm["occasion"].apply(_is_blank).any():
+        mask = norm["occasion"].apply(_is_blank) if col_occasion else pd.Series(True, index=norm.index)
+        norm.loc[mask, "occasion"] = norm.loc[mask, "order_datetime"].apply(_compute_occasion)
+        enriched_counts["occasion"] = int(mask.sum())
 
     # Filter out invalid rows
     total_rows = len(norm)
@@ -249,4 +324,5 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         "orderItemsInserted": inserted,
         "uploadId": upload_id,
         "columnsFound": original_cols,
+        "enriched": enriched_counts,   # rows auto-filled per column
     }
