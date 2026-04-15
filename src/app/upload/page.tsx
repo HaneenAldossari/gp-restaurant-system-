@@ -3,6 +3,7 @@
 import TopBar from "@/components/TopBar";
 import { Upload, FileSpreadsheet, CheckCircle, Download, Trash2, AlertCircle } from "lucide-react";
 import { useState } from "react";
+import { uploadFile } from "@/lib/api";
 
 const uploadHistory = [
   { id: 1, fileName: "Sales_2025.xlsx", date: "2025-12-31", records: 2271, status: "Processed" },
@@ -14,16 +15,31 @@ const uploadHistory = [
 export default function UploadPage() {
   const [dragOver, setDragOver] = useState(false);
   const [showCleaning, setShowCleaning] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<any>(null);
+
+  const handleFileUpload = async (selectedFile: File) => {
+    setFile(selectedFile);
+    const res = await uploadFile(selectedFile);
+    setResult(res);
+    setShowCleaning(true);
+  };
 
   return (
     <div>
       <TopBar title="Upload Data" />
       <div className="p-6 space-y-6 max-w-5xl">
+        
         {/* Upload Zone */}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); setShowCleaning(true); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const droppedFile = e.dataTransfer.files[0];
+            if (droppedFile) handleFileUpload(droppedFile);
+          }}
           className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-200 cursor-pointer ${
             dragOver
               ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
@@ -34,6 +50,7 @@ export default function UploadPage() {
             <div className="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
               <Upload size={28} className="text-indigo-600 dark:text-indigo-400" />
             </div>
+
             <div>
               <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
                 Drag & drop your sales file here
@@ -42,8 +59,20 @@ export default function UploadPage() {
                 Supports CSV and Excel (.xlsx) files
               </p>
             </div>
+
+            {/* Hidden input */}
+            <input
+              type="file"
+              hidden
+              id="fileInput"
+              onChange={(e) => {
+                const selectedFile = e.target.files?.[0];
+                if (selectedFile) handleFileUpload(selectedFile);
+              }}
+            />
+
             <button
-              onClick={() => setShowCleaning(true)}
+              onClick={() => document.getElementById("fileInput")?.click()}
               className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
             >
               Browse Files
@@ -77,22 +106,42 @@ export default function UploadPage() {
               <CheckCircle size={18} className="text-emerald-600" />
               <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Data Cleaning Complete</h3>
             </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: "Records Processed", value: "2,271" },
-                { label: "Duplicates Removed", value: "0" },
-                { label: "Missing Values Filled", value: "0" },
-                { label: "Invalid Rows Skipped", value: "0" },
-              ].map((item) => (
-                <div key={item.label} className="bg-white dark:bg-slate-800 rounded-lg p-3 text-center">
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">{item.value}</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{item.label}</p>
-                </div>
-              ))}
+              <div className="bg-white dark:bg-slate-800 rounded-lg p-3 text-center">
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {result?.records ?? "-"}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Records Processed</p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-lg p-3 text-center">
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {result?.duplicates ?? "-"}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Duplicates Removed</p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-lg p-3 text-center">
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {result?.missingValues ?? "-"}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Missing Values Filled</p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 rounded-lg p-3 text-center">
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {result?.invalidRows ?? "-"}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Invalid Rows Skipped</p>
+              </div>
             </div>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-3">
-              Sales_2025.xlsx loaded — 14 products, 9 categories, Jan–Dec 2025.
-            </p>
+
+            {file && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-3">
+                {file.name} uploaded successfully
+              </p>
+            )}
           </div>
         )}
 
@@ -101,6 +150,7 @@ export default function UploadPage() {
           <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Upload History</h3>
           </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -112,6 +162,7 @@ export default function UploadPage() {
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
                 {uploadHistory.map((file) => (
                   <tr key={file.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
@@ -121,14 +172,17 @@ export default function UploadPage() {
                         <span className="font-medium text-slate-700 dark:text-slate-200">{file.fileName}</span>
                       </div>
                     </td>
+
                     <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{file.date}</td>
                     <td className="px-5 py-3.5 text-slate-500 dark:text-slate-400">{file.records.toLocaleString()}</td>
+
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
                         <CheckCircle size={12} />
                         {file.status}
                       </span>
                     </td>
+
                     <td className="px-5 py-3.5 text-right">
                       <button className="p-1.5 text-slate-400 hover:text-red-500 transition-colors rounded-md hover:bg-red-50 dark:hover:bg-red-950/30">
                         <Trash2 size={14} />
@@ -140,6 +194,7 @@ export default function UploadPage() {
             </table>
           </div>
         </div>
+
       </div>
     </div>
   );
