@@ -1,6 +1,7 @@
 """FastAPI backend for GP Restaurant Sales System."""
 import logging
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,13 +10,40 @@ from fastapi.responses import JSONResponse
 from data_loader_db import load_data
 
 log = logging.getLogger("gp")
+logging.basicConfig(level=logging.INFO)
 
 from routes_dashboard import router as dashboard_router
 from routes_menu import router as menu_router
-from routes_forecast import router as forecast_router
+from routes_forecast import router as forecast_router, _get_predictions
 from routes_upload import router as upload_router
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Startup: load data into the shared DataFrame cache, then pre-warm the
+    forecast predictions cache so the first user never waits for Prophet
+    to train 129 models (~25 s cold). If the pickle on disk is still valid
+    for the current data signature, this call loads it in ~50 ms; otherwise
+    it retrains and writes a fresh pickle.
+    """
+    try:
+        load_data()
+        log.info("Data loader warmed")
+    except Exception as e:
+        log.warning("Data loader warm failed: %s (will retry on first request)", e)
+
+    try:
+        _get_predictions()
+        log.info("Forecast cache warmed")
+    except Exception as e:
+        log.warning("Forecast cache warm failed: %s (will retry on first request)", e)
+
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Smart Sales Analytics & Forecasting System API",
     description=(
         "Backend API for the Smart Sales Analytics & Forecasting System.\n\n"
@@ -54,12 +82,6 @@ app.include_router(dashboard_router)
 app.include_router(menu_router)
 app.include_router(forecast_router)
 app.include_router(upload_router)
-
-
-@app.on_event("startup")
-def startup():
-    """Pre-load data on startup."""
-    load_data()
 
 
 @app.exception_handler(Exception)

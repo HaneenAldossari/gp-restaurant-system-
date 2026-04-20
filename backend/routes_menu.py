@@ -94,18 +94,26 @@ def _classify(popularity: float, margin: float, avg_pop: float, avg_margin: floa
 def simulate_price_change(
     target: str = Query(..., description="Product name (exact match)"),
     new_price: float = Query(..., description="The hypothetical new selling price"),
+    new_cost: float | None = Query(
+        None,
+        description="Optional hypothetical new unit cost. If omitted, the current cost is used. Cost changes affect margin only (not demand).",
+    ),
 ):
     """
-    Simulate moving a product's price up or down and see:
+    Simulate moving a product's price (and optionally cost) and see:
       - The projected new quantity sold (using -1.5 price elasticity)
       - New revenue, profit, margin, popularity
       - Whether it changes Boston Matrix classification (Star/Plowhorse/Puzzle/Dog)
 
-    Elasticity formula: pct_qty_change = elasticity × pct_price_change
+    Elasticity formula: pct_qty_change = elasticity × pct_price_change.
     With elasticity = -1.5, a +10% price hike projects an -15% drop in quantity.
+
+    Cost does NOT affect demand (customers don't see your cost), only margin.
     """
     if new_price <= 0:
         raise HTTPException(status_code=400, detail="new_price must be positive")
+    if new_cost is not None and new_cost < 0:
+        raise HTTPException(status_code=400, detail="new_cost cannot be negative")
 
     df = load_data()
     if df.empty:
@@ -145,8 +153,10 @@ def simulate_price_change(
     else:
         projected_qty = current_qty
 
+    # Cost changes only affect margin, not demand.
+    effective_cost = float(new_cost) if new_cost is not None else current_cost
     new_revenue = projected_qty * new_price
-    new_total_cost = projected_qty * current_cost
+    new_total_cost = projected_qty * effective_cost
     new_profit = new_revenue - new_total_cost
     new_margin = (new_profit / new_revenue * 100) if new_revenue else 0
 
@@ -191,6 +201,7 @@ def simulate_price_change(
         },
         "simulated": {
             "newPrice": round(new_price, 2),
+            "newCost": round(effective_cost, 2),
             "projectedQty": projected_qty,
             "newRevenue": round(new_revenue, 2),
             "newProfit": round(new_profit, 2),
@@ -200,6 +211,7 @@ def simulate_price_change(
         },
         "delta": {
             "priceChangePct": _pct(current_price, new_price),
+            "costChangePct": _pct(current_cost, effective_cost),
             "qtyChangePct": _pct(current_qty, projected_qty),
             "revenueChangePct": _pct(current_revenue, new_revenue),
             "profitChangePct": _pct(current_profit, new_profit),
