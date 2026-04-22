@@ -246,7 +246,13 @@ def forecast_item(
         "category": _category_lookup.get(target),
         "period": period,
         "model": "Prophet+regressors",
-        "mae": float(item_rows["MAE"].iloc[0]) if pd.notna(item_rows["MAE"].iloc[0]) else None,
+        # MAE was previously returned per-row; Noura's latest model logs it to stdout
+        # per product during training instead. We keep the field for API stability.
+        "mae": (
+            float(item_rows["MAE"].iloc[0])
+            if "MAE" in item_rows.columns and pd.notna(item_rows["MAE"].iloc[0])
+            else None
+        ),
         "totalPredictedQuantity": int(future["yhat"].sum()),
         "dailyPredictions": [
             {"date": r["date"], "predicted_quantity": int(r["predicted_quantity"])}

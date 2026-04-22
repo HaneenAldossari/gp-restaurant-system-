@@ -15,7 +15,7 @@ import os
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from sqlalchemy import text
 
 from db import get_engine
@@ -113,10 +113,28 @@ def _compute_occasion(dt) -> str:
 
 
 @router.post("/api/upload", summary="Upload sales data and save to PostgreSQL")
-async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_file(
+    file: UploadFile = File(...),
+    replace_all: bool = Query(
+        False,
+        description=(
+            "If true, WIPES all existing sales data (uploads, orders, order_items, "
+            "categories, products, forecasts, menu_product_metrics) before importing "
+            "this file. Users are kept. Use this for testing with isolated datasets; "
+            "for incremental real-world uploads, leave it false."
+        ),
+    ),
+) -> dict[str, Any]:
     """
-    Upload a CSV/XLSX file. Rows are parsed, deduplicated, and inserted into the
-    PostgreSQL schema. The forecasting cache is invalidated automatically.
+    Upload a CSV/XLSX file. Rows are parsed and inserted into the PostgreSQL
+    schema. The forecasting cache is invalidated automatically.
+
+    **Default mode (replace_all=false)** — incremental: orders with a matching
+    `order_reference` have their line items replaced; new orders are added.
+    Previous uploads stay in the DB.
+
+    **Reset mode (replace_all=true)** — wipes all existing sales data first,
+    then imports only this file. Useful when testing with a specific dataset.
 
     **Expected columns** (any common alias works — order_reference/order_id,
     sku, quantity/qty, unit_price/price, unit_cost/cost, categ_EN/category,
@@ -205,7 +223,13 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         norm.loc[mask, "occasion"] = norm.loc[mask, "order_datetime"].apply(_compute_occasion)
         enriched_counts["occasion"] = int(mask.sum())
 
-    # Filter out invalid rows
+    # Filter out invalid rows. Keep every valid row — including repeated
+    # (order_reference, sku, qty, price, cost) tuples, because in real POS
+    # data those represent separate purchases of the same item on the same
+    # order (e.g. two taps on the Cappuccino button = two line items of
+    # quantity 1 each, not one line of quantity 2). Our re-upload logic
+    # already deletes the existing order_items for touched orders before
+    # re-inserting, so row-level dedup here would silently lose real sales.
     total_rows = len(norm)
     norm = norm[
         (norm["order_reference"] != "")
@@ -214,14 +238,34 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         & (norm["order_datetime"].notna())
     ].copy()
     skipped = total_rows - len(norm)
-
-    norm = norm.drop_duplicates(
-        subset=["order_reference", "sku", "quantity", "unit_price", "unit_cost"]
-    )
     to_import = len(norm)
 
     engine = get_engine()
+    reset_stats = None
     with engine.begin() as conn:
+        if replace_all:
+            # Wipe all sales-related data so the import starts from empty.
+            # Users are preserved (forecasts/uploads reference user_id).
+            before = conn.execute(text("""
+                SELECT
+                    (SELECT COUNT(*) FROM order_items) AS items,
+                    (SELECT COUNT(*) FROM orders) AS orders,
+                    (SELECT COUNT(*) FROM products) AS products,
+                    (SELECT COUNT(*) FROM categories) AS categories,
+                    (SELECT COUNT(*) FROM uploads) AS uploads
+            """)).fetchone()
+            conn.execute(text(
+                "TRUNCATE menu_product_metrics, forecasts, order_items, orders, "
+                "products, categories, uploads RESTART IDENTITY CASCADE"
+            ))
+            reset_stats = {
+                "itemsWiped": int(before[0]),
+                "ordersWiped": int(before[1]),
+                "productsWiped": int(before[2]),
+                "categoriesWiped": int(before[3]),
+                "uploadsWiped": int(before[4]),
+            }
+
         upload_id = conn.execute(
             text("""
                 INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped)
@@ -334,4 +378,6 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         "uploadId": upload_id,
         "columnsFound": original_cols,
         "enriched": enriched_counts,   # rows auto-filled per column
+        "replaceAll": bool(replace_all),
+        "resetStats": reset_stats,     # null unless replace_all=True
     }

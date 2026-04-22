@@ -4,17 +4,46 @@ from data_loader_db import load_data, filter_data
 
 router = APIRouter(tags=["Dashboard"])
 
-CATEGORY_COLORS = {
-    "Hot Drinks": "#6366f1",
-    "Cold Beverages": "#06b6d4",
-    "Main Course": "#f59e0b",
-    "Burgers": "#ef4444",
-    "Pasta": "#8b5cf6",
-    "Seafood": "#0ea5e9",
-    "Salads": "#10b981",
-    "Appetizers": "#f97316",
-    "Desserts": "#f43f5e",
+# Hand-picked preferences for categories we know about; anything else falls
+# through to the rotating palette below so every slice gets its own color.
+CATEGORY_COLOR_HINTS = {
+    "Hot Drinks":         "#ef4444",   # red
+    "Cold Drinks":        "#06b6d4",   # cyan
+    "Espresso Drinks":    "#6366f1",   # indigo
+    "Cold Coffee Drinks": "#0ea5e9",   # sky
+    "Bakery":             "#f59e0b",   # amber
+    "Sweets":             "#f43f5e",   # rose
+    "Hot Sweets":         "#f97316",   # orange
+    "Savory":             "#10b981",   # emerald
+    # legacy names kept as aliases so older datasets keep their colors
+    "Cold Beverages":     "#06b6d4",
+    "Main Course":        "#f59e0b",
+    "Burgers":            "#ef4444",
+    "Pasta":              "#8b5cf6",
+    "Seafood":            "#0ea5e9",
+    "Salads":             "#10b981",
+    "Appetizers":         "#f97316",
+    "Desserts":           "#f43f5e",
 }
+
+# Fallback palette used for categories not in the hint map. Picks cycle so
+# charts always have distinct slices regardless of dataset.
+_PALETTE = [
+    "#6366f1", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6",
+    "#0ea5e9", "#10b981", "#f97316", "#f43f5e", "#14b8a6",
+    "#a855f7", "#eab308", "#22c55e", "#ec4899", "#3b82f6",
+]
+
+
+def _color_for(name: str, used: set[str]) -> str:
+    """Return the hinted color if available, else the next unused palette color."""
+    if name in CATEGORY_COLOR_HINTS:
+        return CATEGORY_COLOR_HINTS[name]
+    for c in _PALETTE:
+        if c not in used:
+            return c
+    # If the palette is exhausted, wrap around (rare — would need >15 categories)
+    return _PALETTE[len(used) % len(_PALETTE)]
 
 
 @router.get("/api/dashboard")
@@ -69,7 +98,16 @@ def dashboard(
     cat_rev = df.groupby("Category")["Total Price"].sum().reset_index()
     cat_rev.columns = ["name", "value"]
     cat_rev["value"] = cat_rev["value"].round(2)
-    cat_rev["color"] = cat_rev["name"].map(CATEGORY_COLORS).fillna("#94a3b8")
+
+    # Assign a distinct color to each category — hinted first, then cycle
+    # through a palette so no two slices share the same fallback gray.
+    used: set[str] = set()
+    colors: list[str] = []
+    for name in cat_rev["name"]:
+        c = _color_for(name, used)
+        colors.append(c)
+        used.add(c)
+    cat_rev["color"] = colors
     sales_by_category = cat_rev.sort_values("value", ascending=False).to_dict("records")
 
     # --- Top 10 items ---
