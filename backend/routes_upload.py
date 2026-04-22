@@ -15,15 +15,14 @@ import os
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import text
 
+from auth import get_current_user_id
 from db import get_engine
 import data_loader_db
 
 router = APIRouter(tags=["Upload"])
-
-DEFAULT_USER_ID = 1  # Demo Manager seeded at setup
 
 
 def _pick_col(df: pd.DataFrame, options: list[str]) -> str | None:
@@ -112,18 +111,160 @@ def _compute_occasion(dt) -> str:
     return "Normal Day"
 
 
+@router.get("/api/uploads", summary="List every uploaded file and its stats")
+def list_uploads(user_id: int = Depends(get_current_user_id)) -> dict[str, Any]:
+    """
+    Return every upload for the current user in chronological order
+    (newest first), with the number of orders and line items imported from
+    each. Used by the Upload page to show a management history.
+    """
+    with get_engine().connect() as conn:
+        rows = conn.execute(text("""
+            SELECT
+                u.id,
+                u.filename,
+                u.uploaded_at,
+                u.rows_imported,
+                u.rows_skipped,
+                COALESCE((SELECT COUNT(*) FROM orders o WHERE o.upload_id = u.id), 0) AS orders,
+                COALESCE((
+                    SELECT COUNT(*) FROM order_items oi
+                    JOIN orders o ON oi.order_id = o.id
+                    WHERE o.upload_id = u.id
+                ), 0) AS items,
+                COALESCE((
+                    SELECT SUM(oi.quantity * oi.unit_price) FROM order_items oi
+                    JOIN orders o ON oi.order_id = o.id
+                    WHERE o.upload_id = u.id
+                ), 0) AS revenue
+            FROM uploads u
+            WHERE u.user_id = :uid
+            ORDER BY u.uploaded_at DESC
+        """), {"uid": user_id}).fetchall()
+    return {
+        "uploads": [
+            {
+                "id": int(r[0]),
+                "filename": r[1],
+                "uploadedAt": r[2].isoformat() if r[2] else None,
+                "rowsImported": int(r[3]),
+                "rowsSkipped": int(r[4] or 0),
+                "orders": int(r[5]),
+                "items": int(r[6]),
+                "revenue": round(float(r[7]), 2),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/api/uploads/{upload_id}", summary="Remove one upload and its data")
+def delete_upload(
+    upload_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> dict[str, Any]:
+    """
+    Delete a single upload owned by the current user. Its orders and
+    order_items are removed via the ON DELETE CASCADE foreign keys. Products
+    and categories are shared across users so only orphans are pruned.
+    Invalidates this user's forecasting cache.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT filename, rows_imported FROM uploads WHERE id = :id AND user_id = :uid"),
+            {"id": upload_id, "uid": user_id},
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+        conn.execute(
+            text("DELETE FROM uploads WHERE id = :id AND user_id = :uid"),
+            {"id": upload_id, "uid": user_id},
+        )
+        # Prune orphan products/categories that now have no line items at all,
+        # so the filters stay clean after deletion.
+        conn.execute(text("""
+            DELETE FROM products
+            WHERE id NOT IN (SELECT DISTINCT product_id FROM order_items)
+        """))
+        conn.execute(text("""
+            DELETE FROM categories
+            WHERE id NOT IN (SELECT DISTINCT category_id FROM products)
+        """))
+        # Drop this user's forecast history so stale rows aren't served.
+        conn.execute(text("DELETE FROM forecasts WHERE user_id = :uid"), {"uid": user_id})
+    # Invalidate caches that depend on this user's data
+    data_loader_db.reload_data(user_id)
+    from routes_forecast import invalidate_cache
+    invalidate_cache(user_id)
+    return {
+        "success": True,
+        "deletedId": upload_id,
+        "deletedFilename": row[0],
+        "deletedRows": int(row[1]),
+    }
+
+
+@router.delete("/api/data", summary="Clear ALL sales data for the current user")
+def clear_all_data(user_id: int = Depends(get_current_user_id)) -> dict[str, Any]:
+    """
+    Wipe every upload owned by the current user and its data (orders, line
+    items, forecasts). Products and categories are shared across users so
+    only orphans are pruned. Use for a fresh start in this workspace.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        counts = conn.execute(text("""
+            SELECT
+                (SELECT COUNT(*) FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 JOIN uploads u ON o.upload_id = u.id
+                 WHERE u.user_id = :uid) AS items,
+                (SELECT COUNT(*) FROM orders o
+                 JOIN uploads u ON o.upload_id = u.id
+                 WHERE u.user_id = :uid) AS orders,
+                (SELECT COUNT(*) FROM uploads WHERE user_id = :uid) AS uploads
+        """), {"uid": user_id}).fetchone()
+        # forecasts first (no cascade from uploads), then uploads (cascades to
+        # orders → order_items for this user only). Products/categories stay.
+        conn.execute(text("DELETE FROM forecasts WHERE user_id = :uid"), {"uid": user_id})
+        conn.execute(text("DELETE FROM uploads WHERE user_id = :uid"), {"uid": user_id})
+        # Prune orphan products/categories (no line items pointing to them).
+        conn.execute(text("""
+            DELETE FROM products
+            WHERE id NOT IN (SELECT DISTINCT product_id FROM order_items)
+        """))
+        conn.execute(text("""
+            DELETE FROM categories
+            WHERE id NOT IN (SELECT DISTINCT category_id FROM products)
+        """))
+    data_loader_db.reload_data(user_id)
+    from routes_forecast import invalidate_cache
+    invalidate_cache(user_id)
+    return {
+        "success": True,
+        "cleared": {
+            "items": int(counts[0]),
+            "orders": int(counts[1]),
+            "uploads": int(counts[2]),
+        },
+    }
+
+
 @router.post("/api/upload", summary="Upload sales data and save to PostgreSQL")
 async def upload_file(
     file: UploadFile = File(...),
     replace_all: bool = Query(
         False,
         description=(
-            "If true, WIPES all existing sales data (uploads, orders, order_items, "
-            "categories, products, forecasts, menu_product_metrics) before importing "
-            "this file. Users are kept. Use this for testing with isolated datasets; "
-            "for incremental real-world uploads, leave it false."
+            "If true, WIPES THIS USER's existing uploads/orders/line-items and "
+            "forecast history before importing this file. Other users' workspaces "
+            "and the shared products/categories tables are not affected. Use this "
+            "for testing with isolated datasets; for incremental real-world "
+            "uploads, leave it false."
         ),
     ),
+    user_id: int = Depends(get_current_user_id),
 ) -> dict[str, Any]:
     """
     Upload a CSV/XLSX file. Rows are parsed and inserted into the PostgreSQL
@@ -181,7 +322,13 @@ async def upload_file(
         )
 
     norm = pd.DataFrame()
-    norm["order_reference"] = df[col_order_ref].astype(str).str.strip()
+    # Namespace order_reference by user_id so two teammates uploading the same
+    # CSV don't collide on the global UNIQUE (order_reference) constraint.
+    # This is a workaround for the testing-only multi-user mode; when we move
+    # to single-tenant / proper auth, the prefix can be dropped.
+    norm["order_reference"] = (
+        f"u{user_id}:" + df[col_order_ref].astype(str).str.strip()
+    )
     norm["sku"] = df[col_sku].astype(str).str.strip() if col_sku else df[col_name_en].astype(str).str.strip() if col_name_en else norm["order_reference"]
     norm["quantity"] = pd.to_numeric(df[col_qty], errors="coerce").fillna(0).astype(int)
     norm["unit_price"] = pd.to_numeric(df[col_price], errors="coerce").fillna(0.0)
@@ -244,26 +391,35 @@ async def upload_file(
     reset_stats = None
     with engine.begin() as conn:
         if replace_all:
-            # Wipe all sales-related data so the import starts from empty.
-            # Users are preserved (forecasts/uploads reference user_id).
+            # Wipe only THIS user's sales data so the import starts from
+            # empty for them. Other users' workspaces are untouched.
             before = conn.execute(text("""
                 SELECT
-                    (SELECT COUNT(*) FROM order_items) AS items,
-                    (SELECT COUNT(*) FROM orders) AS orders,
-                    (SELECT COUNT(*) FROM products) AS products,
-                    (SELECT COUNT(*) FROM categories) AS categories,
-                    (SELECT COUNT(*) FROM uploads) AS uploads
-            """)).fetchone()
-            conn.execute(text(
-                "TRUNCATE menu_product_metrics, forecasts, order_items, orders, "
-                "products, categories, uploads RESTART IDENTITY CASCADE"
-            ))
+                    (SELECT COUNT(*) FROM order_items oi
+                     JOIN orders o ON oi.order_id = o.id
+                     JOIN uploads u ON o.upload_id = u.id
+                     WHERE u.user_id = :uid) AS items,
+                    (SELECT COUNT(*) FROM orders o
+                     JOIN uploads u ON o.upload_id = u.id
+                     WHERE u.user_id = :uid) AS orders,
+                    (SELECT COUNT(*) FROM uploads WHERE user_id = :uid) AS uploads
+            """), {"uid": user_id}).fetchone()
+            conn.execute(text("DELETE FROM forecasts WHERE user_id = :uid"), {"uid": user_id})
+            conn.execute(text("DELETE FROM uploads WHERE user_id = :uid"), {"uid": user_id})
+            # Prune orphan products/categories (shared tables — only drop
+            # rows no longer referenced anywhere after this user's wipe).
+            conn.execute(text("""
+                DELETE FROM products
+                WHERE id NOT IN (SELECT DISTINCT product_id FROM order_items)
+            """))
+            conn.execute(text("""
+                DELETE FROM categories
+                WHERE id NOT IN (SELECT DISTINCT category_id FROM products)
+            """))
             reset_stats = {
                 "itemsWiped": int(before[0]),
                 "ordersWiped": int(before[1]),
-                "productsWiped": int(before[2]),
-                "categoriesWiped": int(before[3]),
-                "uploadsWiped": int(before[4]),
+                "uploadsWiped": int(before[2]),
             }
 
         upload_id = conn.execute(
@@ -272,7 +428,7 @@ async def upload_file(
                 VALUES (:uid, :fn, :ri, :rs)
                 RETURNING id
             """),
-            {"uid": DEFAULT_USER_ID, "fn": file.filename or "upload", "ri": to_import, "rs": skipped},
+            {"uid": user_id, "fn": file.filename or "upload", "ri": to_import, "rs": skipped},
         ).scalar()
 
         # Upsert categories
@@ -361,12 +517,12 @@ async def upload_file(
             )
             inserted += 1
 
-    # Invalidate caches so forecast/dashboard/menu see the new data
-    data_loader_db.reload_data()
+    # Invalidate this user's caches so forecast/dashboard/menu see the new data
+    data_loader_db.reload_data(user_id)
     from routes_forecast import invalidate_cache
-    invalidate_cache()
+    invalidate_cache(user_id)
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM forecasts"))
+        conn.execute(text("DELETE FROM forecasts WHERE user_id = :uid"), {"uid": user_id})
 
     return {
         "success": True,

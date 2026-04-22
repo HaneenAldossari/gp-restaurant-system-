@@ -15,7 +15,7 @@ from hijri_converter import Gregorian
 from sklearn.metrics import mean_absolute_error
 
 
-def run_forecast(df: pd.DataFrame, save_csv: bool = False) -> pd.DataFrame:
+def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 30) -> pd.DataFrame:
 
     #  تثبيت النتائج
     np.random.seed(42)
@@ -148,7 +148,7 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False) -> pd.DataFrame:
         # =========================
         future_dates = pd.date_range(
             start=data['ds'].min(),
-            end=data['ds'].max() + pd.Timedelta(days=30)
+            end=data['ds'].max() + pd.Timedelta(days=horizon_days)
         )
 
         future = pd.MultiIndex.from_product(

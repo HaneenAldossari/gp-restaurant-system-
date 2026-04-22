@@ -1,5 +1,7 @@
 """Dashboard API — GET /api/dashboard"""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from auth import get_current_user_id
 from data_loader_db import load_data, filter_data
 
 router = APIRouter(tags=["Dashboard"])
@@ -51,8 +53,9 @@ def dashboard(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     category: str | None = Query(None),
+    user_id: int = Depends(get_current_user_id),
 ):
-    df = filter_data(load_data(), start_date, end_date, category)
+    df = filter_data(load_data(user_id), start_date, end_date, category)
 
     if df.empty:
         raise HTTPException(status_code=404, detail="No data for the selected filters")

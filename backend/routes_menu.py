@@ -1,5 +1,7 @@
 """Menu Engineering API — GET /api/menu-engineering"""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from auth import get_current_user_id
 from data_loader_db import load_data, filter_data
 
 router = APIRouter(tags=["Menu Engineering"])
@@ -9,8 +11,9 @@ router = APIRouter(tags=["Menu Engineering"])
 def menu_engineering(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
+    user_id: int = Depends(get_current_user_id),
 ):
-    df = filter_data(load_data(), start_date, end_date)
+    df = filter_data(load_data(user_id), start_date, end_date)
 
     if df.empty:
         raise HTTPException(status_code=404, detail="No data for the selected filters")
@@ -377,6 +380,7 @@ def simulate_price_change(
         None,
         description="Optional hypothetical new unit cost. If omitted, the current cost is used. Cost changes affect margin only (not demand).",
     ),
+    user_id: int = Depends(get_current_user_id),
 ):
     """
     Simulate moving a product's price (and optionally cost) and return:
@@ -400,7 +404,7 @@ def simulate_price_change(
     if new_cost is not None and new_cost < 0:
         raise HTTPException(status_code=400, detail="new_cost cannot be negative")
 
-    df = load_data()
+    df = load_data(user_id)
     if df.empty:
         raise HTTPException(status_code=404, detail="No sales data available")
 
@@ -564,6 +568,7 @@ def simulate_bulk(
         ...,
         description="Percentage price change to apply to every item in the group (e.g. 10 for +10%, -5 for -5%)",
     ),
+    user_id: int = Depends(get_current_user_id),
 ):
     """
     Apply the same percentage price change to every product in a given
@@ -579,7 +584,7 @@ def simulate_bulk(
             detail="classification must be one of: Star, Plowhorse, Puzzle, Dog",
         )
 
-    df = load_data()
+    df = load_data(user_id)
     if df.empty:
         raise HTTPException(status_code=404, detail="No sales data available")
 

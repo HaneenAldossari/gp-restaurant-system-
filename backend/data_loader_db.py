@@ -1,8 +1,16 @@
-"""Load sales data from PostgreSQL — drop-in replacement for data_loader.py (Excel)."""
+"""Load sales data from PostgreSQL — drop-in replacement for data_loader.py (Excel).
+
+Per-user workspace isolation: each user gets its own DataFrame cache, keyed
+by user_id. Rows are filtered via `uploads.user_id` so users never see each
+other's uploads.
+"""
 import pandas as pd
+from sqlalchemy import text
+
 from db import get_engine
 
-_df: pd.DataFrame | None = None
+# Per-user in-memory cache — keyed by user_id.
+_df_by_user: dict[int, pd.DataFrame] = {}
 
 _QUERY = """
 SELECT
@@ -18,18 +26,21 @@ SELECT
     o.occasion            AS occasion
 FROM order_items oi
 JOIN orders     o ON oi.order_id    = o.id
+JOIN uploads    u ON o.upload_id    = u.id
 JOIN products   p ON oi.product_id  = p.id
 JOIN categories c ON p.category_id  = c.id
+WHERE u.user_id = :user_id
 """
 
 
-def load_data() -> pd.DataFrame:
-    """Run one big JOIN and shape the result to match the legacy Excel DataFrame."""
-    global _df
-    if _df is not None:
-        return _df
+def load_data(user_id: int = 1) -> pd.DataFrame:
+    """Run one big JOIN (scoped to this user) and shape the result to match
+    the legacy Excel DataFrame."""
+    cached = _df_by_user.get(user_id)
+    if cached is not None:
+        return cached
 
-    df = pd.read_sql(_QUERY, get_engine())
+    df = pd.read_sql(text(_QUERY), get_engine(), params={"user_id": user_id})
     df["Order Datetime"] = pd.to_datetime(df["Order Datetime"])
     df["Order Date"]  = df["Order Datetime"].dt.normalize()
     df["Order Time"]  = df["Order Datetime"].dt.time
@@ -44,15 +55,20 @@ def load_data() -> pd.DataFrame:
     df["profit"]       = (df["Total Price"] - df["Product Cost"]).round(2)
     df["margin_pct"]   = ((df["profit"] / df["Total Price"]) * 100).round(2)
 
-    _df = df
-    return _df
+    _df_by_user[user_id] = df
+    return df
 
 
-def reload_data() -> pd.DataFrame:
-    """Invalidate the cache — call after a new upload."""
-    global _df
-    _df = None
-    return load_data()
+def reload_data(user_id: int | None = None) -> None:
+    """Invalidate cache(s) — call after a new upload.
+
+    If `user_id` is given, drop only that user's cache. Otherwise clear every
+    user's cache (useful after cross-cutting admin actions).
+    """
+    if user_id is None:
+        _df_by_user.clear()
+    else:
+        _df_by_user.pop(user_id, None)
 
 
 def filter_data(
