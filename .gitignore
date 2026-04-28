@@ -59,6 +59,10 @@ backend/cache/
 *.parquet
 data_pipeline/all_products_predictions_imputed.csv
 data_pipeline/product_sales_imputed_FINAL.xlsx
+# …but DO commit the small bundled sample dataset that ships with the
+# repo so a fresh deploy can pre-load each workspace with realistic data.
+!backend/sample_data/*.xlsx
+!backend/sample_data/*.csv
 
 # Claude Code
 .claude/

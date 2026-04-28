@@ -1,153 +1,120 @@
 """
-Seed a small, realistic sample sales dataset into a user's workspace so
-they can immediately try the forecasting / dashboard / menu engineering
-pages without uploading anything.
+Seed each workspace with the bundled 2022 orders dataset so the deployed
+app feels alive the moment a tester picks their workspace — no upload
+needed. The file (`backend/sample_data/orders_2022.xlsx`) is the same
+real export the forecasting model was trained on, so anyone testing the
+deployed app sees results that match the local development experience.
 
-The data is generated programmatically (no CSV shipped in git) with a
-fixed seed so every workspace gets the same baseline. It mirrors what
-the real upload pipeline produces — including the season / occasion /
-time_period enrichment — so forecasts and Boston Matrix classifications
-work the same on it as on real uploads.
+The sample shows up in Upload History as "orders_2022.xlsx
+(auto-loaded)". Testers can:
+  - Delete it from Settings → Upload Data and replace with their own file
+  - Add another upload on top (incremental — orders accumulate by reference)
+  - Use "Clear all data" to wipe; the next backend startup re-seeds it
 
-Idempotent: skipped if the user already has any uploads. To force a
-re-seed, call `seed_sample_for_user(user_id, force=True)`.
-
-Patterns baked into the synthetic data:
-  - Saudi Fri/Sat weekend bump (~25% lift)
-  - Payday spike: day 27 → next month's 5th (~40% lift over baseline)
-  - Modest mid-month dip
-  - Eight products across three categories with distinct elasticity-class
-    flavours (so Stars / Plowhorses / Puzzles / Dogs all appear when the
-    Menu Insights page runs the Boston Matrix split)
-
-Run as a script: `python seed_sample_data.py` — seeds every user that
-doesn't have data yet.
+Column detection / normalization / season-occasion-time-period
+enrichment all reuse the helpers from `routes_upload.py` so the seed
+behaves identically to a real upload.
 """
 from __future__ import annotations
 
-import random
-from datetime import datetime, timedelta
+import io
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import text
 
 from db import get_engine
 
-SAMPLE_FILENAME = "sample_data_2022.csv (auto-loaded)"
-SAMPLE_DAYS = 120  # ~4 months — enough history for Prophet + reliability tiers
-SAMPLE_START = datetime(2022, 6, 1)
+SAMPLE_FILE = Path(__file__).parent / "sample_data" / "orders_2022.xlsx"
+SAMPLE_FILENAME_LABEL = "orders_2022.xlsx (auto-loaded)"
 
 
-# (category_en, category_ar, sku, name_en, name_ar, unit_price, unit_cost)
-PRODUCTS = [
-    ("Hot Drinks",  "مشروبات ساخنة", "SKU001", "Espresso",       "إسبريسو",         8,  3),
-    ("Hot Drinks",  "مشروبات ساخنة", "SKU002", "Cappuccino",     "كابتشينو",        12, 4),
-    ("Hot Drinks",  "مشروبات ساخنة", "SKU003", "Spanish Latte",  "لاتيه إسباني",    14, 5),
-    ("Cold Drinks", "مشروبات باردة", "SKU004", "Iced Latte",     "لاتيه مثلج",      16, 6),
-    ("Cold Drinks", "مشروبات باردة", "SKU005", "Iced Mocha",     "موكا مثلجة",      18, 7),
-    ("Pastries",    "معجنات",        "SKU006", "Croissant",      "كرواسون",         10, 4),
-    ("Pastries",    "معجنات",        "SKU007", "Cheese Pastry",  "فطيرة جبن",       9,  4),
-    ("Pastries",    "معجنات",        "SKU008", "Chocolate Cake", "كيك شوكولاتة",     22, 8),
-]
+def _normalize_dataframe(df: pd.DataFrame, user_id: int) -> tuple[pd.DataFrame, int, int]:
+    """Match the upload route's column detection and enrichment in one place
+    so the seed and the real upload produce identical rows."""
+    # Lazy import to avoid circular dependency at module import time
+    from routes_upload import (
+        _pick_col, _build_datetime, _bucket_time_period,
+        _compute_season, _compute_occasion,
+    )
 
-# Per-product baseline order share (what fraction of orders include this item).
-# Picked so the Boston Matrix classification surfaces all four bands.
-PRODUCT_DEMAND_WEIGHT = [0.45, 0.55, 0.60, 0.40, 0.35, 0.30, 0.25, 0.10]
+    df.columns = [str(c).strip() for c in df.columns]
 
+    col_order_ref = _pick_col(df, ["order_reference", "order_id", "order_ref", "Order ID"])
+    col_sku = _pick_col(df, ["sku", "SKU", "product_sku"])
+    col_qty = _pick_col(df, ["quantity", "qty", "Quantity"])
+    col_price = _pick_col(df, ["unit_price", "price", "Unit Price"])
+    col_cost = _pick_col(df, ["unit_cost", "cost", "Unit Cost"])
+    col_cat_en = _pick_col(df, ["categ_EN", "category_en", "category", "Category"])
+    col_cat_ar = _pick_col(df, ["categ_AR", "category_ar"])
+    col_name_en = _pick_col(df, ["name", "name_en", "product_name", "Product"])
+    col_name_ar = _pick_col(df, ["name_localized", "name_ar", "arabic_name"])
+    col_customer = _pick_col(df, ["customer_name", "customer", "Customer"])
+    col_season = _pick_col(df, ["season", "Season"])
+    col_occasion = _pick_col(df, ["occasion", "Occasion"])
+    col_time_period = _pick_col(df, ["time_period", "timePeriod", "time_zone"])
 
-def _bucket_time_period(hour: int) -> str:
-    if 5 <= hour <= 11:  return "morning"
-    if 12 <= hour <= 16: return "Afternoon"
-    if 17 <= hour <= 21: return "Evening"
-    return "night"
+    must = {"order_reference": col_order_ref, "quantity": col_qty,
+            "unit_price": col_price, "unit_cost": col_cost, "categ_EN": col_cat_en}
+    missing = [k for k, v in must.items() if v is None]
+    if missing:
+        raise RuntimeError(f"Sample data missing required columns: {missing}")
 
+    norm = pd.DataFrame()
+    # Namespace by user_id so all four teammates get an independent copy
+    # under the global UNIQUE (order_reference) constraint.
+    norm["order_reference"] = (
+        f"u{user_id}:" + df[col_order_ref].astype(str).str.strip()
+    )
+    norm["sku"] = (
+        df[col_sku].astype(str).str.strip()
+        if col_sku
+        else (df[col_name_en].astype(str).str.strip() if col_name_en else norm["order_reference"])
+    )
+    norm["quantity"] = pd.to_numeric(df[col_qty], errors="coerce").fillna(0).astype(int)
+    norm["unit_price"] = pd.to_numeric(df[col_price], errors="coerce").fillna(0.0)
+    norm["unit_cost"] = pd.to_numeric(df[col_cost], errors="coerce").fillna(0.0)
+    norm["categ_EN"] = df[col_cat_en].astype(str).str.strip()
+    norm["categ_AR"] = df[col_cat_ar].astype(str).str.strip() if col_cat_ar else norm["categ_EN"]
+    norm["name_en"] = df[col_name_en].astype(str).str.strip() if col_name_en else norm["sku"]
+    norm["name_ar"] = df[col_name_ar].astype(str).str.strip() if col_name_ar else norm["name_en"]
+    norm["customer_name"] = df[col_customer] if col_customer else None
+    norm["season"] = df[col_season].astype(str).str.strip() if col_season else None
+    norm["occasion"] = df[col_occasion].astype(str).str.strip() if col_occasion else None
+    norm["time_period"] = df[col_time_period].astype(str).str.strip() if col_time_period else None
 
-def _compute_season(d: datetime) -> str:
-    m = d.month
-    if m in (12, 1, 2):  return "Winter"
-    if m in (3, 4, 5):   return "Spring"
-    if m in (6, 7, 8):   return "Summer"
-    return "Autumn"
+    norm["order_datetime"] = _build_datetime(df)
 
+    # Drop rows with no datetime — Prophet can't use them, dashboard breaks
+    keep = norm["order_datetime"].notna()
+    skipped = int((~keep).sum())
+    norm = norm[keep].copy()
 
-def _compute_occasion(d: datetime) -> str:
-    if d.month == 9 and d.day == 23: return "Saudi National Day"
-    if d.day >= 27 or d.day <= 5:    return "Payday"
-    if d.weekday() in (4, 5):         return "Weekend"
-    return "Normal Day"
+    # Enrich season / occasion / time_period if the export didn't include them
+    def _is_blank(v) -> bool:
+        return v is None or (isinstance(v, str) and not v.strip()) or pd.isna(v)
 
+    if col_time_period is None or norm["time_period"].apply(_is_blank).any():
+        mask = norm["time_period"].apply(_is_blank) if col_time_period else pd.Series(True, index=norm.index)
+        norm.loc[mask, "time_period"] = norm.loc[mask, "order_datetime"].dt.hour.apply(_bucket_time_period)
 
-def _orders_per_day(d: datetime) -> int:
-    """Realistic daily order volume with weekend + payday lifts baked in."""
-    base = 80
-    if d.weekday() in (4, 5):
-        base = int(base * 1.25)         # Fri/Sat bump
-    if d.day >= 27 or d.day <= 5:
-        base = int(base * 1.40)         # post-payday spending spike
-    if 13 <= d.day <= 24:
-        base = int(base * 0.85)         # mid-month dip
-    return max(20, int(base * random.uniform(0.85, 1.15)))
+    if col_season is None or norm["season"].apply(_is_blank).any():
+        mask = norm["season"].apply(_is_blank) if col_season else pd.Series(True, index=norm.index)
+        norm.loc[mask, "season"] = norm.loc[mask, "order_datetime"].apply(_compute_season)
 
+    if col_occasion is None or norm["occasion"].apply(_is_blank).any():
+        mask = norm["occasion"].apply(_is_blank) if col_occasion else pd.Series(True, index=norm.index)
+        norm.loc[mask, "occasion"] = norm.loc[mask, "order_datetime"].apply(_compute_occasion)
 
-def _sample_hour() -> int:
-    # Coffee shop hours: morning rush, lunch dip, afternoon peak, late evening
-    weights = [3, 5, 12, 18, 14, 10, 8, 9, 11, 13, 12, 10, 8, 6, 4, 3]
-    return random.choices(list(range(7, 23)), weights=weights)[0]
-
-
-def generate_sample_rows() -> list[dict]:
-    """Build the deterministic synthetic dataset. Returns a list of
-    dicts ready to be turned into orders / order_items inserts."""
-    random.seed(42)
-    rows: list[dict] = []
-    order_seq = 1
-
-    for day_offset in range(SAMPLE_DAYS):
-        date = SAMPLE_START + timedelta(days=day_offset)
-        n_orders = _orders_per_day(date)
-
-        for _ in range(n_orders):
-            order_ref = f"SAMPLE-{order_seq:06d}"
-            hour = _sample_hour()
-            order_dt = date.replace(hour=hour, minute=random.randint(0, 59))
-            time_period = _bucket_time_period(hour)
-            season = _compute_season(date)
-            occasion = _compute_occasion(date)
-
-            # 1–3 unique items per order, weighted by product popularity
-            n_items = random.choices([1, 2, 3], weights=[60, 30, 10])[0]
-            chosen_idxs = random.choices(
-                range(len(PRODUCTS)),
-                weights=PRODUCT_DEMAND_WEIGHT,
-                k=n_items,
-            )
-            for idx in set(chosen_idxs):  # dedupe: an order doesn't list the same item twice
-                cat_en, cat_ar, sku, name_en, name_ar, price, cost = PRODUCTS[idx]
-                qty = random.choices([1, 2, 3], weights=[75, 20, 5])[0]
-                rows.append({
-                    "order_reference": order_ref,
-                    "order_datetime": order_dt,
-                    "customer_name": None,
-                    "time_period": time_period,
-                    "season": season,
-                    "occasion": occasion,
-                    "categ_en": cat_en,
-                    "categ_ar": cat_ar,
-                    "sku": sku,
-                    "name_en": name_en,
-                    "name_ar": name_ar,
-                    "quantity": qty,
-                    "unit_price": float(price),
-                    "unit_cost": float(cost),
-                })
-            order_seq += 1
-
-    return rows
+    return norm, int(len(norm)), skipped
 
 
 def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
-    """Insert the synthetic sample dataset for `user_id`. No-op if they
+    """Insert the bundled sample dataset for `user_id`. No-op if they
     already have uploads (unless force=True). Returns a summary dict."""
+    if not SAMPLE_FILE.exists():
+        return None
+
     engine = get_engine()
     with engine.begin() as conn:
         if not force:
@@ -158,83 +125,83 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
             if has_data:
                 return None
 
-        rows = generate_sample_rows()
-        df = pd.DataFrame(rows)
-        if df.empty:
-            return None
+        df_raw = pd.read_excel(SAMPLE_FILE, engine="openpyxl")
+        norm, to_import, skipped = _normalize_dataframe(df_raw, user_id)
 
-        # 1. Categories — unique pairs from the dataset
-        cats = df[["categ_ar", "categ_en"]].drop_duplicates()
-        conn.execute(
-            text("""
-                INSERT INTO categories (name_ar, name_en) VALUES (:ar, :en)
-                ON CONFLICT DO NOTHING
-            """),
-            [{"ar": r["categ_ar"], "en": r["categ_en"]} for _, r in cats.iterrows()],
-        )
+        # 1. Categories
+        cats = norm[["categ_AR", "categ_EN"]].drop_duplicates()
+        if not cats.empty:
+            conn.execute(
+                text("""
+                    INSERT INTO categories (name_ar, name_en) VALUES (:ar, :en)
+                    ON CONFLICT DO NOTHING
+                """),
+                [{"ar": r["categ_AR"], "en": r["categ_EN"]} for _, r in cats.iterrows()],
+            )
         cat_map = dict(conn.execute(text("SELECT name_en, id FROM categories")).all())
 
         # 2. Products
-        prods = df[["sku", "name_ar", "name_en", "categ_en"]].drop_duplicates()
-        conn.execute(
-            text("""
-                INSERT INTO products (sku, name_ar, name_en, category_id, is_active)
-                VALUES (:sku, :ar, :en, :cid, TRUE)
-                ON CONFLICT (sku) DO NOTHING
-            """),
-            [
-                {
-                    "sku": r["sku"],
-                    "ar": r["name_ar"],
-                    "en": r["name_en"],
-                    "cid": cat_map.get(r["categ_en"]),
-                }
-                for _, r in prods.iterrows()
-            ],
-        )
+        prods = norm[["sku", "name_ar", "name_en", "categ_EN"]].drop_duplicates()
+        if not prods.empty:
+            conn.execute(
+                text("""
+                    INSERT INTO products (sku, name_ar, name_en, category_id, is_active)
+                    VALUES (:sku, :ar, :en, :cid, TRUE)
+                    ON CONFLICT (sku) DO NOTHING
+                """),
+                [
+                    {
+                        "sku": r["sku"],
+                        "ar": str(r["name_ar"])[:100],
+                        "en": str(r["name_en"])[:100],
+                        "cid": cat_map.get(r["categ_EN"]),
+                    }
+                    for _, r in prods.iterrows()
+                ],
+            )
         prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
-        # 3. Uploads row — appears in the "Upload History" so the user can
-        # delete it from the UI exactly like a real upload
+        # 3. Uploads row — appears in Upload History so user can delete it
         upload_id = conn.execute(
             text("""
                 INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped)
-                VALUES (:uid, :fn, :n, 0)
+                VALUES (:uid, :fn, :ri, :rs)
                 RETURNING id
             """),
-            {"uid": user_id, "fn": SAMPLE_FILENAME, "n": len(df)},
+            {"uid": user_id, "fn": SAMPLE_FILENAME_LABEL, "ri": to_import, "rs": skipped},
         ).scalar()
 
         # 4. Orders — bulk
-        orders = df[
+        orders = norm[
             ["order_reference", "order_datetime", "customer_name",
              "time_period", "season", "occasion"]
         ].drop_duplicates(subset=["order_reference"])
-        conn.execute(
-            text("""
-                INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
-                                    time_period, season, occasion)
-                VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
-                ON CONFLICT (order_reference) DO NOTHING
-            """),
-            [
-                {
-                    "uid": upload_id,
-                    "oref": r["order_reference"],
-                    "odt": r["order_datetime"],
-                    "cname": r["customer_name"],
-                    "tp": r["time_period"],
-                    "sn": r["season"],
-                    "oc": r["occasion"],
-                }
-                for _, r in orders.iterrows()
-            ],
-        )
+        if not orders.empty:
+            conn.execute(
+                text("""
+                    INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
+                                        time_period, season, occasion)
+                    VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
+                    ON CONFLICT (order_reference) DO NOTHING
+                """),
+                [
+                    {
+                        "uid": upload_id,
+                        "oref": r["order_reference"],
+                        "odt": r["order_datetime"],
+                        "cname": r["customer_name"],
+                        "tp": r["time_period"],
+                        "sn": r["season"],
+                        "oc": r["occasion"],
+                    }
+                    for _, r in orders.iterrows()
+                ],
+            )
         order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 
-        # 5. Order items — bulk in batches of 1000
-        item_payload = []
-        for _, r in df.iterrows():
+        # 5. Order items — bulk in batches
+        item_payload: list[dict] = []
+        for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
             oid = order_map.get(r["order_reference"])
             pid = prod_map.get(r["sku"])
             if oid is None or pid is None:
@@ -244,25 +211,30 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
                 "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
             })
 
-        insert_items = text("""
-            INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
-            VALUES (:oid, :pid, :qty, :price, :cost)
-        """)
-        BATCH = 1000
-        for i in range(0, len(item_payload), BATCH):
-            conn.execute(insert_items, item_payload[i:i + BATCH])
+        if item_payload:
+            insert_items = text("""
+                INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
+                VALUES (:oid, :pid, :qty, :price, :cost)
+            """)
+            BATCH = 1000
+            for i in range(0, len(item_payload), BATCH):
+                conn.execute(insert_items, item_payload[i:i + BATCH])
 
         return {
             "user_id": user_id,
             "upload_id": upload_id,
-            "rows": len(df),
+            "rows": to_import,
             "items": len(item_payload),
             "orders": len(orders),
+            "skipped": skipped,
         }
 
 
 def seed_all_users() -> None:
     """Seed sample data for every user that doesn't already have data."""
+    if not SAMPLE_FILE.exists():
+        print(f"Sample file not found at {SAMPLE_FILE}, skipping.")
+        return
     engine = get_engine()
     with engine.connect() as conn:
         users = conn.execute(text("SELECT id, name FROM users ORDER BY id")).fetchall()
@@ -270,7 +242,8 @@ def seed_all_users() -> None:
         result = seed_sample_for_user(u[0])
         if result:
             print(f"Seeded sample for [{u[0]}] {u[1]}: "
-                  f"{result['rows']} items / {result['orders']} orders")
+                  f"{result['rows']} items / {result['orders']} orders "
+                  f"(skipped {result['skipped']})")
         else:
             print(f"Skipped [{u[0]}] {u[1]} — already has data")
 
