@@ -36,11 +36,22 @@ def _build_datetime(df: pd.DataFrame) -> pd.Series:
     col_time = _pick_col(df, ["time", "Time", "order_time"])
     col_date = _pick_col(df, ["date", "Date", "order_date"])
     col_dt = _pick_col(df, ["created_at", "order_datetime", "datetime"])
+    # date column + time column → combine them directly.
     if col_date and col_time:
         return pd.to_datetime(
             df[col_date].astype(str).str.strip() + " " + df[col_time].astype(str).str.strip(),
             errors="coerce",
         )
+    # datetime column + separate time column → take the date portion of
+    # the datetime and graft the time on top. This is the common POS
+    # export pattern where `created_at` is timestamp-at-midnight and the
+    # actual time lives in its own column. Without this, the time column
+    # would be silently ignored and every order would be labelled "night".
+    if col_dt and col_time:
+        dt = pd.to_datetime(df[col_dt], errors="coerce")
+        t = df[col_time].astype(str).str.strip()
+        combined = dt.dt.strftime("%Y-%m-%d") + " " + t
+        return pd.to_datetime(combined, errors="coerce")
     if col_dt:
         return pd.to_datetime(df[col_dt], errors="coerce")
     if col_date:
@@ -76,10 +87,13 @@ def _compute_season(dt) -> str | None:
 def _compute_occasion(dt) -> str:
     """
     Determine occasion from the date:
-      - Saudi National Day (Sep 23)
       - Ramadan (whole Hijri month 9)
       - Eid al-Fitr (Hijri 10/1 - 10/3)
       - Eid al-Adha (Hijri 12/10 - 12/13)
+      - Saudi National Day (Sep 23)
+      - Payday (Gregorian day-of-month >= 25 or == 1 — captures the
+        end-of-month spike when civil servants get paid on the 27th and
+        private-sector salaries land late in the month)
       - Weekend (Friday/Saturday in Saudi Arabia)
       - Normal Day (default)
     """
@@ -87,11 +101,7 @@ def _compute_occasion(dt) -> str:
         return "Normal Day"
     d = pd.Timestamp(dt).date()
 
-    # National Day
-    if d.month == 9 and d.day == 23:
-        return "National Day"
-
-    # Hijri-based holidays
+    # Hijri-based holidays first (strongest signal)
     try:
         from hijri_converter import Gregorian
         h = Gregorian(d.year, d.month, d.day).to_hijri()
@@ -103,6 +113,18 @@ def _compute_occasion(dt) -> str:
             return "Eid al-Adha"
     except Exception:
         pass
+
+    if d.month == 9 and d.day == 23:
+        return "Saudi National Day"
+
+    # Saudi payday window — salaries land on the 27th of each Gregorian
+    # month; the post-payday spending spike runs through about day 5 of
+    # the following month. Treated as one continuous "Payday" window so
+    # any week that contains the 27th (or its spillover) is labelled
+    # consistently. Placed before weekend so a Friday-the-27th surfaces
+    # the (stronger) payday signal.
+    if d.day >= 27 or d.day <= 5:
+        return "Payday"
 
     # Saudi weekend = Friday (4) and Saturday (5)
     if d.weekday() in (4, 5):

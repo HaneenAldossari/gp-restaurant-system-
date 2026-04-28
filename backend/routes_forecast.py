@@ -36,10 +36,27 @@ from sqlalchemy import text
 from auth import get_current_user_id
 from data_loader_db import load_data
 from db import get_engine
-from prophet_model import run_forecast
+from prophet_model import run_forecast, compute_season, compute_occasion
 
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
+
+# Bump this whenever the model's input encoding or regressor list changes —
+# old pickles from a previous schema will fail the signature check and be
+# retrained automatically.
+#   v2 = one-hot occasion + payday regressor (collinear with weekly_seasonality)
+#   v3 = Prophet `holidays` mechanism + stronger weekly_seasonality prior
+#   v4 = daily_seasonality=False + manual weekly with fourier_order=10
+#   v5 = daily aggregation per product + post-hoc time_period split
+#   v6 = train production model on full data (split is for MAE only) +
+#        tighter changepoint prior so trend doesn't extrapolate negative
+#   v7 = separated early_payday (days 1-5) from late_payday (28-31) —
+#        the early window carries most of the lift in real Saudi data
+#   v8 = unified payday window: anchor day 27, upper_window=9 (covers
+#        day 27 through next month's 5th as one continuous holiday)
+#   v9 = holidays_prior_scale bumped to 100 so payday/Eid/Ramadan
+#        coefficients aren't regularized down to noise
+MODEL_VERSION = "v9"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -50,40 +67,18 @@ router = APIRouter(tags=["Forecasting"])
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Regressor helpers — mirror Noura's compute_season / compute_occasion so
-# we can label each forecast date with the values her model used as inputs.
+# Regressor labelling — reuses the same compute_* functions Prophet trains
+# on so the UI can display exactly which signals (Weekend / Payday / Eid)
+# the model saw for each forecast date.
 # ─────────────────────────────────────────────────────────────────────────
-def _season_for(dt) -> str:
-    m = pd.Timestamp(dt).month
-    if m in (12, 1, 2): return "Winter"
-    if m in (3, 4, 5):  return "Spring"
-    if m in (6, 7, 8):  return "Summer"
-    return "Autumn"
-
-
-def _occasion_for(dt) -> str:
-    d = pd.Timestamp(dt).date()
-    try:
-        from hijri_converter import Gregorian
-        h = Gregorian(d.year, d.month, d.day).to_hijri()
-        if h.month == 9:                         return "Ramadan"
-        if h.month == 10 and 1 <= h.day <= 3:    return "Eid al-Fitr"
-        if h.month == 12 and 10 <= h.day <= 13:  return "Eid al-Adha"
-    except Exception:
-        pass
-    if d.month == 9 and d.day == 23: return "Saudi National Day"
-    if d.weekday() in (4, 5):        return "Weekend"
-    return "Normal Day"
-
-
 def _regressors_for_dates(dates: list) -> list[dict]:
     """Return per-date regressor values (season + occasion) for a forecast window."""
     out = []
     for d in dates:
         out.append({
             "date": str(pd.Timestamp(d).date()),
-            "season": _season_for(d),
-            "occasion": _occasion_for(d),
+            "season": compute_season(d),
+            "occasion": compute_occasion(d),
         })
     return out
 
@@ -92,9 +87,17 @@ def _regressors_for_dates(dates: list) -> list[dict]:
 _predictions_cache: dict[int, pd.DataFrame] = {}
 _category_lookup: dict[int, dict[str, str]] = {}       # user_id -> (product -> category)
 _data_end_date: dict[int, pd.Timestamp] = {}            # user_id -> last actual sale date
+_horizon_cache: dict[int, int] = {}                     # user_id -> days of cached future
 _price_cache: dict[int, dict[str, tuple[float, float]]] = {}  # user_id -> (product -> (unit_price, unit_cost))
 _baseline_cache: dict[int, dict[str, float]] = {}       # user_id -> (product -> historical units/day)
 _cache_lock = threading.Lock()
+
+
+# Default forecast horizon when the user hasn't asked for anything specific.
+# Generous enough that demos with 2022 data can forecast ~3 years out without
+# triggering a retrain. Retraining still happens automatically if a request
+# asks for a window beyond this — see _ensure_horizon().
+DEFAULT_HORIZON_DAYS = 1095  # ~3 years
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -143,10 +146,14 @@ def _current_signature(user_id: int) -> dict[str, Any]:
             FROM uploads
             WHERE uploads.user_id = :uid
         """), {"uid": user_id}).fetchone()
-    return {"upload_id": int(latest[0]), "item_count": int(latest[1])}
+    return {
+        "model_version": MODEL_VERSION,
+        "upload_id": int(latest[0]),
+        "item_count": int(latest[1]),
+    }
 
 
-def _try_load_from_disk(user_id: int) -> tuple[pd.DataFrame, dict[str, str], pd.Timestamp] | None:
+def _try_load_from_disk(user_id: int) -> tuple[pd.DataFrame, dict[str, str], pd.Timestamp, int] | None:
     """Load cached predictions from disk if signature still matches."""
     cache_file = _cache_file(user_id)
     if not cache_file.exists():
@@ -156,7 +163,16 @@ def _try_load_from_disk(user_id: int) -> tuple[pd.DataFrame, dict[str, str], pd.
             payload = pickle.load(f)
         if payload.get("signature") != _current_signature(user_id):
             return None
-        return payload["predictions"], payload["category_lookup"], payload["data_end_date"]
+        # Older caches predate the horizon field — fall back to 365 to stay
+        # compatible. New caches save the actual horizon so we can decide
+        # when to retrain.
+        horizon = int(payload.get("horizon_days", 365))
+        return (
+            payload["predictions"],
+            payload["category_lookup"],
+            payload["data_end_date"],
+            horizon,
+        )
     except Exception:
         return None
 
@@ -166,34 +182,49 @@ def _save_to_disk(
     predictions: pd.DataFrame,
     cat_map: dict[str, str],
     end_date: pd.Timestamp,
+    horizon_days: int,
 ) -> None:
     payload = {
         "signature": _current_signature(user_id),
         "predictions": predictions,
         "category_lookup": cat_map,
         "data_end_date": end_date,
+        "horizon_days": int(horizon_days),
     }
     with _cache_file(user_id).open("wb") as f:
         pickle.dump(payload, f)
 
 
-def _get_predictions(user_id: int) -> pd.DataFrame:
-    """Return cached predictions for this user: in-memory → disk → train fresh."""
+def _get_predictions(user_id: int, required_horizon_days: int | None = None) -> pd.DataFrame:
+    """Return cached predictions for this user: in-memory → disk → train fresh.
+
+    `required_horizon_days` lets callers ask for a minimum forecast window.
+    If the cached predictions don't extend that far the cache is dropped
+    and we retrain with a horizon big enough to cover the request (plus a
+    margin so adjacent calls don't trigger another retrain). When omitted,
+    any cached predictions are returned as-is.
+    """
     with _cache_lock:
         cached = _predictions_cache.get(user_id)
-        if cached is not None:
+        cached_horizon = _horizon_cache.get(user_id, 0)
+        if cached is not None and (
+            required_horizon_days is None or cached_horizon >= required_horizon_days
+        ):
             return cached
 
         # Try the disk cache first (survives server restarts)
-        loaded = _try_load_from_disk(user_id)
-        if loaded is not None:
-            preds, cat_map, end_date = loaded
-            _predictions_cache[user_id] = preds
-            _category_lookup[user_id] = cat_map
-            _data_end_date[user_id] = end_date
-            return preds
+        if cached is None:
+            loaded = _try_load_from_disk(user_id)
+            if loaded is not None:
+                preds, cat_map, end_date, disk_horizon = loaded
+                if required_horizon_days is None or disk_horizon >= required_horizon_days:
+                    _predictions_cache[user_id] = preds
+                    _category_lookup[user_id] = cat_map
+                    _data_end_date[user_id] = end_date
+                    _horizon_cache[user_id] = disk_horizon
+                    return preds
 
-        # Train from scratch
+        # Train from scratch (or retrain with a longer horizon)
         model_df, cat_map = _build_input_frame(user_id)
         if model_df.empty:
             raise RuntimeError(
@@ -202,16 +233,17 @@ def _get_predictions(user_id: int) -> pd.DataFrame:
             )
 
         end_date = pd.to_datetime(model_df["date"]).max()
-        # Always train with a 365-day horizon so the API can serve any
-        # forecast window up to a year ahead. The reliability tiers are
-        # computed from data length in the /api/data-range endpoint so the
-        # UI can flag predictions that go beyond what the data supports.
-        predictions = run_forecast(model_df, save_csv=False, horizon_days=365)
+        target_horizon = max(
+            DEFAULT_HORIZON_DAYS,
+            (required_horizon_days or 0) + 30,  # small buffer to absorb adjacent requests
+        )
+        predictions = run_forecast(model_df, save_csv=False, horizon_days=target_horizon)
         _predictions_cache[user_id] = predictions
         _category_lookup[user_id] = cat_map
         _data_end_date[user_id] = end_date
+        _horizon_cache[user_id] = target_horizon
         _persist_run(user_id, predictions)
-        _save_to_disk(user_id, predictions, cat_map, end_date)
+        _save_to_disk(user_id, predictions, cat_map, end_date, target_horizon)
         return predictions
 
 
@@ -248,10 +280,19 @@ def _baseline_daily_per_product(user_id: int) -> dict[str, float]:
 
 def _apply_baseline_floor(user_id: int, fut: pd.DataFrame, period: int) -> pd.DataFrame:
     """
-    For each product in the future slice, if Prophet's predicted total for
-    the window is less than 30% of what the product's historical daily
-    average would produce, replace its rows with a uniform baseline
-    projection. Keeps low-volume items from collapsing to zero.
+    Defensive correction for products where Prophet severely under-predicts.
+
+    Strategy: PROPORTIONALLY SCALE rather than replace. The previous
+    implementation overwrote every row with a single uniform value, which
+    flattened weekend / payday / holiday peaks Prophet had correctly
+    predicted in shape but underestimated in magnitude. Scaling preserves
+    the daily pattern (Saturday > Tuesday) while making the totals match
+    historical reality.
+
+    Trigger: only when Prophet's total is < 15% of what the product's
+    historical average would produce — a much higher bar than before so
+    we don't override the model's normal output. Uniform replacement is
+    only used as a last resort when Prophet predicted exactly zero.
     """
     if fut.empty or period <= 0:
         return fut
@@ -264,29 +305,34 @@ def _apply_baseline_floor(user_id: int, fut: pd.DataFrame, period: int) -> pd.Da
     fut = fut.copy()
     fut["yhat"] = fut["yhat"].astype(float)
 
-    # Build per-product totals first, identify which to floor, then apply
-    # in one pass. This avoids any in-loop mutation confusion on the
-    # groupby iteration.
     per_product_total = fut.groupby("product", observed=True)["yhat"].sum().to_dict()
-    per_product_rows  = fut.groupby("product", observed=True)["ds"].apply(lambda s: s.dt.normalize().nunique()).to_dict()
+    per_product_days  = fut.groupby("product", observed=True)["ds"].apply(
+        lambda s: s.dt.normalize().nunique()
+    ).to_dict()
 
-    to_floor: dict[str, float] = {}  # product -> per-row floor value
     for product, actual_total in per_product_total.items():
         daily_baseline = baselines.get(product, 0.0)
         if daily_baseline <= 0:
             continue
-        window_days = per_product_rows.get(product, 0)
+        window_days = per_product_days.get(product, 0)
         expected_total = daily_baseline * window_days
         if expected_total <= 0:
             continue
-        if actual_total < 0.30 * expected_total:
-            n_rows = int((fut["product"] == product).sum())
-            if n_rows > 0:
-                to_floor[product] = (daily_baseline * window_days) / n_rows
 
-    if to_floor:
-        floor_mask = fut["product"].isin(list(to_floor.keys()))
-        fut.loc[floor_mask, "yhat"] = fut.loc[floor_mask, "product"].map(to_floor).astype(float)
+        # Only intervene when Prophet's total is severely off (<15% of
+        # historical expectation). For everything else we trust the model.
+        if actual_total < 0.15 * expected_total:
+            mask = fut["product"] == product
+            if actual_total > 0:
+                # Scale proportionally — preserves day-of-week, weekend, and
+                # event spikes in Prophet's output while restoring magnitude.
+                scale = expected_total / actual_total
+                fut.loc[mask, "yhat"] = fut.loc[mask, "yhat"] * scale
+            else:
+                # Prophet predicted exactly zero — last-resort uniform fill.
+                n_rows = int(mask.sum())
+                if n_rows > 0:
+                    fut.loc[mask, "yhat"] = expected_total / n_rows
     return fut
 
 
@@ -303,6 +349,24 @@ def _revenue_profit(user_id: int, df_future: pd.DataFrame) -> tuple[float, float
     return rev, prof
 
 
+def _daily_revenue(user_id: int, df_future: pd.DataFrame) -> dict[str, float]:
+    """
+    Per-date revenue: for every (date, product) cell in the future slice,
+    multiply predicted yhat by that product's unit price and sum by date.
+
+    Returned as {date_str: SAR} — the caller zips this with its daily
+    quantity series to build the chart's revenue line.
+    """
+    if df_future.empty:
+        return {}
+    prices = _price_lookup(user_id)
+    df = df_future.copy()
+    df["__price"] = df["product"].map(lambda p: prices.get(p, (0.0, 0.0))[0]).astype(float)
+    df["__rev"] = df["yhat"] * df["__price"]
+    out = df.groupby(df["ds"].astype(str))["__rev"].sum()
+    return {str(k): float(v) for k, v in out.items()}
+
+
 def _notable_events(regressors: list[dict]) -> list[dict]:
     """Flag notable occasions in the forecast window (non-"Normal Day" days)."""
     events = []
@@ -313,58 +377,124 @@ def _notable_events(regressors: list[dict]) -> list[dict]:
 
 
 def _summarize_for_manager(regressors: list[dict], total_qty: int, peak_day: dict | None, events: list[dict]) -> list[str]:
-    """Produce short, plain-English action tips — the 'what should I do' section."""
+    """
+    Produce short, plain-English action tips — the "what should I do" section.
+
+    The tips adapt to the scale of the forecast. For a near-zero forecast
+    (e.g. a low-volume item), recommending "schedule extra staff" is
+    nonsense; we surface that the item is barely moving and suggest
+    promotion or menu review instead. Event tips (Ramadan, Eid, etc.) are
+    only surfaced when total demand is meaningful enough for them to act
+    as a useful pattern signal.
+    """
     tips: list[str] = []
+    window_days = max(len(regressors), 1)
+    daily_avg = total_qty / window_days
 
-    if peak_day:
+    # ── Near-zero demand: everything else is noise ───────────────────────
+    if daily_avg < 0.5:
         tips.append(
-            f"Peak day is {peak_day['dayLabel']} with about {peak_day['qty']:,} units — "
-            f"schedule extra staff and prep inventory in advance."
+            "Expected demand is very low across this window — barely any sales predicted. "
+            "Consider a promotion, price change, or reviewing the item's place on the menu."
         )
+        return tips
 
-    has_ramadan = any(e["event"] == "Ramadan" for e in events)
-    has_eid = any(e["event"].startswith("Eid") for e in events)
-    has_national = any(e["event"] == "Saudi National Day" for e in events)
-    weekend_count = sum(1 for e in events if e["event"] == "Weekend")
+    # ── Peak-day advice scaled to actual magnitude ───────────────────────
+    if peak_day:
+        peak_qty = peak_day.get("qty", 0)
+        if peak_qty >= 20:
+            tips.append(
+                f"Peak day is {peak_day['dayLabel']} with about {peak_qty:,} units — "
+                f"schedule extra staff and prep inventory in advance."
+            )
+        elif peak_qty >= 5:
+            tips.append(
+                f"Busiest day is {peak_day['dayLabel']} (~{peak_qty} units). "
+                f"Top up stock; no special staffing needed for this scale."
+            )
+        else:
+            tips.append(
+                f"Busiest day is {peak_day['dayLabel']} with only ~{peak_qty} unit"
+                f"{'s' if peak_qty != 1 else ''} — demand is modest; keep minimum stock ready."
+            )
 
-    if has_ramadan:
-        tips.append("Ramadan falls in this window — expect lower morning sales and strong evening demand (iftar and suhoor).")
-    if has_eid:
-        tips.append("Eid is in this window — plan for a big spike and increase specialty items and desserts.")
-    if has_national:
-        tips.append("Saudi National Day is in this window — prepare for heavier foot traffic and consider a themed promotion.")
-    if weekend_count >= 2:
-        tips.append(f"{weekend_count} weekend days in this period — Fridays and Saturdays are typically 30% busier.")
+    # ── Event tips — only meaningful for non-trivial volumes ────────────
+    if daily_avg >= 1.0:
+        has_ramadan = any(e["event"] == "Ramadan" for e in events)
+        has_eid = any(e["event"].startswith("Eid") for e in events)
+        has_national = any(e["event"] == "Saudi National Day" for e in events)
+        weekend_count = sum(1 for e in events if e["event"] == "Weekend")
+
+        if has_ramadan:
+            tips.append("Ramadan falls in this window — expect lower morning sales and stronger evening demand (iftar and suhoor).")
+        if has_eid:
+            tips.append("Eid is in this window — plan for a spike and increase specialty items and desserts.")
+        if has_national:
+            tips.append("Saudi National Day is in this window — prepare for heavier foot traffic.")
+        if weekend_count >= 2 and daily_avg >= 3:
+            tips.append(f"{weekend_count} weekend days in this period — Fridays and Saturdays are typically 30% busier.")
 
     if not tips:
-        tips.append("No special events in this period — a typical operating week. Stock to match historical averages.")
+        tips.append("Typical operating period — stock to match historical averages.")
 
     return tips
 
 
-def _slice_future(user_id: int, preds: pd.DataFrame, period: int) -> pd.DataFrame:
+def _slice_future(
+    user_id: int,
+    preds: pd.DataFrame,
+    period: int,
+    start_date: str | None = None,
+    end_date_str: str | None = None,
+) -> pd.DataFrame:
     """
-    Take only future predictions starting AFTER this user's global data end date.
+    Take only future predictions starting from TODAY.
 
-    Post-processing in order:
-      1. Clamp `yhat` to >= 0 (Prophet can produce negative extrapolations,
-         but sales can't go negative).
-      2. Apply a historical-baseline floor for each product — low-volume
-         items get predictions that collapse toward zero because Prophet
-         has almost no signal. For those, fall back to a uniform projection
-         based on the item's historical average units/day.
+    Forecasts are always anchored on the current date — "next 7 days" means
+    the seven days starting tomorrow, not the seven days after the upload's
+    last sale date. When the dataset is from a past year (e.g. 2022 sales
+    looked at in 2026), the in-between window is ignored: managers care
+    about what's happening this coming week, not what would have happened
+    three years ago.
+
+    Slicing precedence:
+      1. Both `start_date` and `end_date_str` given → return predictions in
+         that inclusive window (clamped to >= tomorrow so a stale UI can't
+         request a past-dated forecast).
+      2. Otherwise → return the first `period` days from tomorrow.
+
+    Post-processing:
+      1. Clamp `yhat` to >= 0.
+      2. Apply the historical-baseline floor (proportional scaling for
+         severe under-predictions only).
     """
-    end_date = _data_end_date.get(user_id)
-    if end_date is None:
-        df = preds[preds["type"] == "future"].copy()
-        df["yhat"] = df["yhat"].clip(lower=0)
-        return _apply_baseline_floor(user_id, df, period)
-    fut = preds[preds["ds"] > end_date].copy()
-    if period:
-        cutoff = end_date + pd.Timedelta(days=period)
+    data_end = _data_end_date.get(user_id)
+    today = pd.Timestamp.now().normalize()
+    # Anchor: tomorrow, or right after data_end if the upload extends past
+    # today (shouldn't normally happen, but keeps the logic safe).
+    if data_end is None:
+        anchor = today + pd.Timedelta(days=1)
+    else:
+        anchor = max(today + pd.Timedelta(days=1), data_end + pd.Timedelta(days=1))
+
+    fut = preds[preds["ds"] >= anchor].copy()
+
+    if start_date and end_date_str:
+        lo = pd.Timestamp(start_date)
+        hi = pd.Timestamp(end_date_str)
+        if hi < lo:
+            lo, hi = hi, lo
+        lo = max(lo, anchor)
+        fut = fut[(fut["ds"] >= lo) & (fut["ds"] <= hi)]
+    elif period:
+        cutoff = anchor + pd.Timedelta(days=period - 1)
         fut = fut[fut["ds"] <= cutoff]
+
     fut["yhat"] = fut["yhat"].clip(lower=0)
-    return _apply_baseline_floor(user_id, fut, period)
+    effective_period = period
+    if start_date and end_date_str and not fut.empty:
+        effective_period = max(1, (fut["ds"].max() - fut["ds"].min()).days + 1)
+    return _apply_baseline_floor(user_id, fut, effective_period)
 
 
 def _persist_run(user_id: int, predictions: pd.DataFrame) -> None:
@@ -393,6 +523,67 @@ def _persist_run(user_id: int, predictions: pd.DataFrame) -> None:
         })
 
 
+def _data_end_for(user_id: int) -> pd.Timestamp | None:
+    """Return the user's last sale date — checking the in-memory cache,
+    then the disk pickle, then the database. Cheap so it's safe to call
+    before deciding whether the prediction cache covers today."""
+    cached = _data_end_date.get(user_id)
+    if cached is not None:
+        return cached
+    # Peek at the on-disk pickle without loading the full predictions.
+    cache_file = _cache_file(user_id)
+    if cache_file.exists():
+        try:
+            with cache_file.open("rb") as f:
+                payload = pickle.load(f)
+            end = payload.get("data_end_date")
+            if end is not None:
+                return pd.Timestamp(end)
+        except Exception:
+            pass
+    # Fall back to a small DB query.
+    with get_engine().connect() as conn:
+        row = conn.execute(text("""
+            SELECT MAX(o.order_datetime)
+            FROM orders o
+            JOIN uploads u ON o.upload_id = u.id
+            WHERE u.user_id = :uid
+        """), {"uid": user_id}).fetchone()
+    return pd.Timestamp(row[0]).normalize() if row and row[0] else None
+
+
+def _required_horizon_for(
+    user_id: int,
+    period: int,
+    start_date: str | None,
+    end_date_str: str | None,
+) -> int:
+    """How far past the training data does this request need predictions?
+
+    Forecasts are anchored on TODAY (see `_slice_future`), so the cache
+    must reach at least `today + period`. When the data is from a past
+    year, the gap between data_end and today is added to the requested
+    horizon — otherwise asking for "next 7 days" against 2022 data in
+    2026 would slice an empty window.
+    """
+    today = pd.Timestamp.now().normalize()
+    data_end = _data_end_for(user_id)
+    if data_end is None:
+        # No data uploaded — return the requested period as a placeholder;
+        # _get_predictions will raise a clean error downstream.
+        if start_date and end_date_str:
+            hi = pd.Timestamp(max(start_date, end_date_str))
+            return max(period, 30, int((hi - today).days) + 1)
+        return period
+    if start_date and end_date_str:
+        hi = pd.Timestamp(max(start_date, end_date_str))
+        return max(period, int((hi - data_end).days) + 1)
+    # Preset N days from today: forecast end = today + period, so horizon
+    # past data_end = (today - data_end) + period.
+    forecast_end = max(today, data_end) + pd.Timedelta(days=period)
+    return max(period, int((forecast_end - data_end).days) + 1)
+
+
 def invalidate_cache(user_id: int | None = None) -> None:
     """Clear in-memory and on-disk caches. Called after a new upload.
 
@@ -405,6 +596,7 @@ def invalidate_cache(user_id: int | None = None) -> None:
             _predictions_cache.clear()
             _category_lookup.clear()
             _data_end_date.clear()
+            _horizon_cache.clear()
             _price_cache.clear()
             _baseline_cache.clear()
             try:
@@ -416,6 +608,7 @@ def invalidate_cache(user_id: int | None = None) -> None:
             _predictions_cache.pop(user_id, None)
             _category_lookup.pop(user_id, None)
             _data_end_date.pop(user_id, None)
+            _horizon_cache.pop(user_id, None)
             _price_cache.pop(user_id, None)
             _baseline_cache.pop(user_id, None)
             try:
@@ -426,6 +619,31 @@ def invalidate_cache(user_id: int | None = None) -> None:
 
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers to slice predictions into API responses
+def _round_daily_to_total(values: list[float]) -> list[int]:
+    """
+    Round a list of daily float forecasts to integers such that their sum
+    equals the rounded total. Uses the largest-remainder method: floor
+    every value, then hand the leftover units to the days with the biggest
+    fractional parts.
+
+    Why: for low-volume items Prophet emits ~0.86 units/day over 7 days.
+    Truncating each with int() gives [0, 0, 0, 0, 0, 0, 0] — a peak of 0
+    with a total of 6, which looks broken to the manager. This preserves
+    the total and surfaces which days actually carry the predicted units.
+    """
+    if not values:
+        return []
+    target = max(0, round(sum(values)))
+    floors = [max(0, int(v)) for v in values]
+    leftover = target - sum(floors)
+    if leftover <= 0:
+        return floors
+    order = sorted(range(len(values)), key=lambda i: values[i] - floors[i], reverse=True)
+    for i in order[:leftover]:
+        floors[i] += 1
+    return floors
+
+
 # ─────────────────────────────────────────────────────────────────────────
 def _serialize_rows(rows: pd.DataFrame, only_future: bool = True) -> list[dict[str, Any]]:
     if only_future:
@@ -446,15 +664,18 @@ def _serialize_rows(rows: pd.DataFrame, only_future: bool = True) -> list[dict[s
 @router.get("/api/forecast/item", summary="Forecast a single menu item")
 def forecast_item(
     target: str = Query(..., description="Product name (exact match)"),
-    period: int = Query(7, description="Forecast horizon in days (1-365)"),
+    period: int = Query(7, description="Forecast horizon in days"),
+    start_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-17"),
+    end_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-22"),
     user_id: int = Depends(get_current_user_id),
 ):
     """
-    Per-item forecast using Noura's hybrid Prophet model. Returns predictions
+    Per-item forecast using the hybrid Prophet model. Returns predictions
     aggregated daily plus the time_period breakdown (morning/afternoon/evening/night).
     """
+    required = _required_horizon_for(user_id, period, start_date, end_date)
     try:
-        preds = _get_predictions(user_id)
+        preds = _get_predictions(user_id, required_horizon_days=required)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -462,7 +683,17 @@ def forecast_item(
     if item_rows.empty:
         raise HTTPException(status_code=404, detail=f"Product '{target}' not in forecast output")
 
-    future = _slice_future(user_id, item_rows, period)
+    # Determine whether the uploaded data actually has meaningful time-of-day
+    # signal. If every historical order collapsed to a single bucket (e.g.
+    # all "night" because the Excel lacked a time column), the model's
+    # morning/afternoon/evening predictions are unreliable extrapolations
+    # — Prophet never saw those buckets, so it's guessing outside its
+    # training distribution. In that case we suppress the breakdown.
+    df_hist = load_data(user_id)
+    hist_tps = df_hist["time_period"].dropna().astype(str).str.lower().unique() if not df_hist.empty else []
+    time_of_day_available = len([tp for tp in hist_tps if str(tp).strip() and tp != "nan"]) >= 2
+
+    future = _slice_future(user_id, item_rows, period, start_date, end_date)
 
     daily = (
         future.groupby(future["ds"].astype(str))["yhat"]
@@ -475,15 +706,22 @@ def forecast_item(
     regressors = _regressors_for_dates(daily_dates)
     revenue, profit = _revenue_profit(user_id, future)
 
-    # Peak day for action tips
-    peak_row = daily.loc[daily["predicted_quantity"].idxmax()] if not daily.empty else None
-    peak_info = (
-        {
+    # Round daily floats so their ints sum to the rounded total — avoids
+    # the "7 days of 0 summing to 6" display bug on low-volume items.
+    daily_ints = _round_daily_to_total(daily["predicted_quantity"].tolist())
+    total_qty = sum(daily_ints)
+
+    # Peak day is whichever day has the largest rounded int (so the chart,
+    # peak tip, and KPI card all tell the same story).
+    peak_info = None
+    if daily_ints:
+        peak_idx = max(range(len(daily_ints)), key=lambda i: daily_ints[i])
+        peak_row = daily.iloc[peak_idx]
+        peak_info = {
             "date": peak_row["date"],
             "dayLabel": pd.Timestamp(peak_row["date"]).strftime("%a, %b %-d"),
-            "qty": int(peak_row["predicted_quantity"]),
-        } if peak_row is not None else None
-    )
+            "qty": int(daily_ints[peak_idx]),
+        }
     events = _notable_events(regressors)
 
     return {
@@ -492,30 +730,38 @@ def forecast_item(
         "category": _category_lookup.get(user_id, {}).get(target),
         "period": period,
         "model": "Prophet with season, occasion, and time-of-day regressors",
-        "totalPredictedQuantity": int(future["yhat"].sum()),
+        "totalPredictedQuantity": total_qty,
         "totalPredictedRevenue": round(revenue, 2),
         "totalPredictedProfit": round(profit, 2),
         "peakDay": peak_info,
-        "dailyPredictions": [
-            {"date": r["date"], "predicted_quantity": int(r["predicted_quantity"])}
-            for _, r in daily.iterrows()
-        ],
-        "timePeriodBreakdown": _serialize_rows(future, only_future=False),
+        "dailyPredictions": (lambda rev_map: [
+            {
+                "date": daily.iloc[i]["date"],
+                "predicted_quantity": daily_ints[i],
+                "predicted_revenue": round(rev_map.get(daily.iloc[i]["date"], 0.0), 2),
+            }
+            for i in range(len(daily_ints))
+        ])(_daily_revenue(user_id, future)),
+        "timeOfDayAvailable": time_of_day_available,
+        "timePeriodBreakdown": _serialize_rows(future, only_future=False) if time_of_day_available else [],
         "regressorsUsed": regressors,
         "notableEvents": events,
-        "managerTips": _summarize_for_manager(regressors, int(future["yhat"].sum()), peak_info, events),
+        "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
     }
 
 
 @router.get("/api/forecast/category", summary="Forecast all items in a category")
 def forecast_category(
     target: str = Query(..., description="Category name (e.g. 'Hot Drinks')"),
-    period: int = Query(7, description="Forecast horizon in days (1-365)"),
+    period: int = Query(7, description="Forecast horizon in days"),
+    start_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-17"),
+    end_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-22"),
     user_id: int = Depends(get_current_user_id),
 ):
     """Aggregate every item in the category, sort by predicted quantity."""
+    required = _required_horizon_for(user_id, period, start_date, end_date)
     try:
-        preds = _get_predictions(user_id)
+        preds = _get_predictions(user_id, required_horizon_days=required)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -524,7 +770,7 @@ def forecast_category(
     if not products_in_cat:
         raise HTTPException(status_code=404, detail=f"Category '{target}' not found")
 
-    cat_rows = _slice_future(user_id, preds[preds["product"].isin(products_in_cat)], period)
+    cat_rows = _slice_future(user_id, preds[preds["product"].isin(products_in_cat)], period, start_date, end_date)
 
     per_product = (
         cat_rows.groupby("product")["yhat"]
@@ -543,14 +789,18 @@ def forecast_category(
 
     regressors = _regressors_for_dates(daily_totals["date"].tolist())
     revenue, profit = _revenue_profit(user_id, cat_rows)
-    peak_row = daily_totals.loc[daily_totals["predicted_quantity"].idxmax()] if not daily_totals.empty else None
-    peak_info = (
-        {
+
+    daily_ints = _round_daily_to_total(daily_totals["predicted_quantity"].tolist())
+    total_qty = sum(daily_ints)
+    peak_info = None
+    if daily_ints:
+        peak_idx = max(range(len(daily_ints)), key=lambda i: daily_ints[i])
+        peak_row = daily_totals.iloc[peak_idx]
+        peak_info = {
             "date": peak_row["date"],
             "dayLabel": pd.Timestamp(peak_row["date"]).strftime("%a, %b %-d"),
-            "qty": int(peak_row["predicted_quantity"]),
-        } if peak_row is not None else None
-    )
+            "qty": int(daily_ints[peak_idx]),
+        }
     events = _notable_events(regressors)
 
     return {
@@ -559,7 +809,7 @@ def forecast_category(
         "period": period,
         "model": "Prophet with season, occasion, and time-of-day regressors",
         "itemCount": int(per_product.shape[0]),
-        "totalPredictedQuantity": int(cat_rows["yhat"].sum()),
+        "totalPredictedQuantity": total_qty,
         "totalPredictedRevenue": round(revenue, 2),
         "totalPredictedProfit": round(profit, 2),
         "peakDay": peak_info,
@@ -567,28 +817,35 @@ def forecast_category(
             {"name": r["product"], "totalPredictedQuantity": int(r["totalPredictedQuantity"])}
             for _, r in per_product.iterrows()
         ],
-        "chartData": [
-            {"date": r["date"], "predicted": int(r["predicted_quantity"])}
-            for _, r in daily_totals.iterrows()
-        ],
+        "chartData": (lambda rev_map: [
+            {
+                "date": daily_totals.iloc[i]["date"],
+                "predicted": daily_ints[i],
+                "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
+            }
+            for i in range(len(daily_ints))
+        ])(_daily_revenue(user_id, cat_rows)),
         "regressorsUsed": regressors,
         "notableEvents": events,
-        "managerTips": _summarize_for_manager(regressors, int(cat_rows["yhat"].sum()), peak_info, events),
+        "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
     }
 
 
 @router.get("/api/forecast/total", summary="Forecast total restaurant sales")
 def forecast_total(
-    period: int = Query(7, description="Forecast horizon in days (1-365)"),
+    period: int = Query(7, description="Forecast horizon in days"),
+    start_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-17"),
+    end_date: str | None = Query(None, description="Optional ISO date, e.g. 2023-04-22"),
     user_id: int = Depends(get_current_user_id),
 ):
     """Grand total across every product."""
+    required = _required_horizon_for(user_id, period, start_date, end_date)
     try:
-        preds = _get_predictions(user_id)
+        preds = _get_predictions(user_id, required_horizon_days=required)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    future = _slice_future(user_id, preds, period)
+    future = _slice_future(user_id, preds, period, start_date, end_date)
     future["category"] = future["product"].map(_category_lookup.get(user_id, {}))
 
     per_category = (
@@ -601,6 +858,37 @@ def forecast_total(
         .sort_values("totalPredictedQuantity", ascending=False)
     )
 
+    # Per-item totals so the UI can show top/bottom 5 items across the
+    # whole menu. Category is kept so the frontend can display it inline.
+    per_item = (
+        future.groupby("product")
+        .agg(totalPredictedQuantity=("yhat", "sum"))
+        .reset_index()
+        .sort_values("totalPredictedQuantity", ascending=False)
+    )
+    per_item["category"] = per_item["product"].map(_category_lookup.get(user_id, {}))
+
+    top_items = [
+        {
+            "name": r["product"],
+            "category": r["category"] or "—",
+            "totalPredictedQuantity": int(r["totalPredictedQuantity"]),
+        }
+        for _, r in per_item.head(5).iterrows()
+    ]
+    # Bottom 5 — "worst sellers" worth watching. Filter on the integer
+    # display value (>=1 unit) so we don't surface items that round to 0
+    # and look like a display bug.
+    bottom_candidates = per_item[per_item["totalPredictedQuantity"] >= 1.0]
+    bottom_items = [
+        {
+            "name": r["product"],
+            "category": r["category"] or "—",
+            "totalPredictedQuantity": int(r["totalPredictedQuantity"]),
+        }
+        for _, r in bottom_candidates.tail(5).iloc[::-1].iterrows()
+    ]
+
     daily_totals = (
         future.groupby(future["ds"].astype(str))["yhat"]
         .sum()
@@ -610,21 +898,25 @@ def forecast_total(
 
     regressors = _regressors_for_dates(daily_totals["date"].tolist())
     revenue, profit = _revenue_profit(user_id, future)
-    peak_row = daily_totals.loc[daily_totals["predicted_quantity"].idxmax()] if not daily_totals.empty else None
-    peak_info = (
-        {
+
+    daily_ints = _round_daily_to_total(daily_totals["predicted_quantity"].tolist())
+    total_qty = sum(daily_ints)
+    peak_info = None
+    if daily_ints:
+        peak_idx = max(range(len(daily_ints)), key=lambda i: daily_ints[i])
+        peak_row = daily_totals.iloc[peak_idx]
+        peak_info = {
             "date": peak_row["date"],
             "dayLabel": pd.Timestamp(peak_row["date"]).strftime("%a, %b %-d"),
-            "qty": int(peak_row["predicted_quantity"]),
-        } if peak_row is not None else None
-    )
+            "qty": int(daily_ints[peak_idx]),
+        }
     events = _notable_events(regressors)
 
     return {
         "scope": "total",
         "period": period,
         "model": "Prophet with season, occasion, and time-of-day regressors",
-        "totalPredictedQuantity": int(future["yhat"].sum()),
+        "totalPredictedQuantity": total_qty,
         "totalPredictedRevenue": round(revenue, 2),
         "totalPredictedProfit": round(profit, 2),
         "categoryCount": int(per_category.shape[0]),
@@ -638,11 +930,17 @@ def forecast_total(
             }
             for _, r in per_category.iterrows()
         ],
-        "chartData": [
-            {"date": r["date"], "predicted": int(r["predicted_quantity"])}
-            for _, r in daily_totals.iterrows()
-        ],
+        "topItems": top_items,
+        "bottomItems": bottom_items,
+        "chartData": (lambda rev_map: [
+            {
+                "date": daily_totals.iloc[i]["date"],
+                "predicted": daily_ints[i],
+                "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
+            }
+            for i in range(len(daily_ints))
+        ])(_daily_revenue(user_id, future)),
         "regressorsUsed": regressors,
         "notableEvents": events,
-        "managerTips": _summarize_for_manager(regressors, int(future["yhat"].sum()), peak_info, events),
+        "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
     }

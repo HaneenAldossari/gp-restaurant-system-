@@ -233,34 +233,90 @@ def _simulate_one(
     }
 
 
-def _optimal_price(cost: float, elasticity: float, current_price: float) -> dict | None:
+def _optimal_price(
+    cost: float,
+    elasticity: float,
+    current_price: float,
+    classification: str | None = None,
+) -> dict | None:
     """
-    For constant-elasticity demand with unit cost c, profit-max price is:
-        P* = e * c / (1 + e)    where e is elasticity (negative, |e| > 1).
+    Suggest a price using the constant-elasticity demand model:
+        P* = e * c / (1 + e)    where e < -1 (true elastic region).
 
-    The raw theoretical optimum often implies dramatic price jumps (e.g. +50%)
-    that would cause real customers to walk away — the constant-elasticity
-    model understates demand loss at large jumps. So we return a *safe*
-    incremental suggestion capped at ±20% of current price. The theoretical
-    target is exposed separately for reference.
+    Theoretical optima from this model are often aggressive (+50% etc.) because
+    the model understates the damage large jumps do to real demand. We cap the
+    suggestion at ±20% from current.
 
-    For inelastic categories (|e| <= 1), profit grows monotonically with
-    price — no interior optimum — so we suggest a small test increase.
+    Classification overrides (Boston Matrix):
+      - Dog (Underperformer) → raising price won't help; suggest a small
+        discount to test demand response, or flag for replacement.
+      - Puzzle (Hidden gem)  → high margin but low volume; lower price to
+        unlock demand, margin stays healthy enough to be worthwhile.
+      - Star, Plowhorse      → use the elasticity-based math.
+
+    For strictly inelastic items (|e| < 1), constant-elasticity profit grows
+    with price without bound — no interior optimum exists, so we propose a
+    small test increase. Unit-elastic items (|e| ≈ 1) are handled via the
+    theoretical math, not forced into the test-increase branch.
     """
-    SAFE_UP_CAP   = 0.20   # don't suggest more than +20% above current
-    SAFE_DOWN_CAP = 0.20   # or more than −20% below current
+    import math
+    SAFE_UP_CAP   = 0.20
+    SAFE_DOWN_CAP = 0.20
 
-    if elasticity >= -1.0:
-        # Inelastic: no mathematical optimum — recommend a small test increase
-        test_price = round(current_price * 1.10)
+    # ── Classification-aware overrides ─────────────────────────────────
+    # For Dogs and Puzzles, raising the price makes the underlying problem
+    # worse. Boston-Matrix menu-engineering guidance is: try a discount,
+    # a promotion, or removal — not a price hike.
+    if classification == "Dog":
+        suggested = max(int(math.floor(current_price * 0.90)), int(math.ceil(cost * 1.20)))
+        if suggested >= int(round(current_price)):
+            suggested = int(round(current_price)) - 1
+        suggested = max(suggested, int(math.ceil(cost * 1.05)))  # keep a minimum margin
         return {
-            "price": int(test_price),
-            "kind": "test_increase",
+            "price": suggested,
+            "kind": "dog_discount",
             "rationale": (
-                "Customers for this category keep buying even when the price "
-                "goes up a bit. Try raising slightly to test, then raise more "
-                "if customers don't drop off."
+                "This item is underperforming — raising the price will likely make it sell "
+                "even less. Try a small discount to see if it picks up. If it still doesn't "
+                "move, consider replacing it on the menu."
             ),
+            "inelastic": elasticity > -1.0,
+        }
+
+    if classification == "Puzzle":
+        suggested = max(int(math.floor(current_price * 0.92)), int(math.ceil(cost * 1.30)))
+        if suggested >= int(round(current_price)):
+            suggested = int(round(current_price)) - 1
+        return {
+            "price": suggested,
+            "kind": "puzzle_discount",
+            "rationale": (
+                "This item has strong margin but isn't selling enough. A small discount "
+                "could attract more customers while keeping the margin healthy. Pair with "
+                "a feature on the menu or a combo to drive visibility."
+            ),
+            "inelastic": elasticity > -1.0,
+        }
+
+    # ── Star / Plowhorse / unknown: elasticity-based logic ────────────
+    # Treat the unit-elastic neighborhood (|e| ≈ 1) as inelastic. At exactly
+    # e = -1, the profit-max formula divides by zero; nearby values produce
+    # unstable theoretical prices that aren't decision-useful.
+    if elasticity > -1.05:
+        test_price = int(math.ceil(current_price * 1.10))
+        if test_price <= int(round(current_price)):
+            test_price = int(round(current_price)) + 1
+        # Category-neutral wording: the old copy was coffee-specific ("this
+        # category keeps buying") and misread as advice for sweets/bakery.
+        rationale = (
+            "Sales history shows demand here is steady — a small price bump "
+            "would likely raise profit without driving customers away. "
+            "Try this increase and review after a week."
+        )
+        return {
+            "price": test_price,
+            "kind": "test_increase",
+            "rationale": rationale,
             "inelastic": True,
         }
 
@@ -272,22 +328,23 @@ def _optimal_price(cost: float, elasticity: float, current_price: float) -> dict
         suggested = safe_max
         kind = "capped_up"
         rationale = (
-            "Your sales history suggests a higher price would give more profit, "
-            "but jumping too far at once can scare customers away. Start with "
-            "this increase and test customer response before going higher."
+            "Sales history suggests a higher price would earn more profit, but jumping too "
+            "far at once can scare customers away. Start with this increase and test before "
+            "going higher."
         )
     elif theoretical < safe_min:
         suggested = safe_min
         kind = "capped_down"
         rationale = (
-            "A small discount looks worthwhile. Avoid cutting too aggressively — "
-            "test this price first."
+            "A small discount looks worthwhile for this item. Avoid cutting too aggressively — "
+            "test this price first and watch how sales respond."
         )
     else:
         suggested = theoretical
         kind = "direct"
         rationale = (
-            "Based on your sales history, this price should give you the best profit."
+            "Based on your sales history, this price should give the best profit balance — "
+            "high enough to hold margin, low enough to keep customers buying."
         )
 
     return {
@@ -493,8 +550,55 @@ def simulate_price_change(
             "newClassification": s["newClassification"],
         })
 
+    current_classification = _classify(current_pop, current_margin, avg_pop, avg_margin)
+    optimal = _optimal_price(
+        effective_cost, elasticity_central, current_price, current_classification,
+    )
+
+    # Enrich the suggestion with the projected classification transition
+    # at the suggested price, and with an explicit "raise / lower / hold"
+    # direction label so the UI doesn't have to infer it from `kind`.
+    if optimal:
+        suggested_price = float(optimal["price"])
+        suggested_sim = _simulate_one(
+            current_price, current_cost, current_qty,
+            suggested_price, effective_cost, elasticity_central,
+            other_qty, avg_pop, avg_margin,
+        )
+        # Direction: compare against current price (rounded to match what
+        # the UI shows) so a tiny rounding-only suggestion shows as "Hold".
+        cur_p_int = int(round(current_price))
+        sug_p_int = int(round(suggested_price))
+        if sug_p_int > cur_p_int:
+            direction = "raise"
+            direction_label = "Raise the price"
+        elif sug_p_int < cur_p_int:
+            direction = "lower"
+            direction_label = "Lower the price"
+        else:
+            direction = "hold"
+            direction_label = "Keep the current price"
+
+        change_pct = _pct(current_price, suggested_price) if current_price > 0 else None
+        optimal.update({
+            "direction": direction,
+            "directionLabel": direction_label,
+            "priceChangePct": change_pct,
+            "currentClassification": current_classification,
+            "newClassification": suggested_sim["newClassification"],
+            "classificationChange": (
+                f"{current_classification} → {suggested_sim['newClassification']}"
+                if current_classification != suggested_sim["newClassification"]
+                else f"Stays {current_classification}"
+            ),
+            "projectedQty": suggested_sim["projectedQty"],
+            "projectedProfit": suggested_sim["newProfit"],
+            "projectedMargin": suggested_sim["newMargin"],
+            "profitChangePct": _pct(current_profit, suggested_sim["newProfit"]),
+        })
+
     recommendations = {
-        "optimalPrice": _optimal_price(effective_cost, elasticity_central, current_price),
+        "optimalPrice": optimal,
         "breakEvenPrice": _break_even_price(
             current_profit, current_price, current_qty,
             effective_cost, elasticity_central,
@@ -504,8 +608,6 @@ def simulate_price_change(
             current_profit, current_margin, elasticity_central,
         ),
     }
-
-    current_classification = _classify(current_pop, current_margin, avg_pop, avg_margin)
 
     return {
         "elasticity": elasticity_central,

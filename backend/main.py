@@ -1,6 +1,8 @@
 """FastAPI backend for GP Restaurant Sales System."""
 import logging
+import os
 import traceback
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +20,45 @@ from routes_dashboard import router as dashboard_router
 from routes_menu import router as menu_router
 from routes_forecast import router as forecast_router
 from routes_upload import router as upload_router
+
+
+def _ensure_schema_and_seed() -> None:
+    """Create tables + seed teammate workspaces if the DB is empty.
+
+    Runs once at startup. In local dev this is a no-op after the first boot
+    (the `users` check short-circuits). On a freshly provisioned hosted DB
+    (Render, Railway), it bootstraps the entire schema and inserts the
+    teammate accounts so the app is usable immediately after deployment
+    without any manual psql session.
+    """
+    engine = get_engine()
+    schema_path = Path(__file__).parent / "schema.sql"
+    try:
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text(
+                    "SELECT to_regclass('public.users')"
+                )
+            ).scalar()
+        if existing is None and schema_path.exists():
+            log.info("Bootstrapping empty database from schema.sql")
+            sql = schema_path.read_text()
+            with engine.begin() as conn:
+                # Run statements one-by-one so a stray comment/blank chunk
+                # doesn't kill the whole script.
+                for statement in [s.strip() for s in sql.split(";")]:
+                    if statement:
+                        conn.execute(text(statement))
+            log.info("Schema created.")
+        # Seed teammate users (idempotent — uses ON CONFLICT DO NOTHING)
+        try:
+            from seed_users import seed as _seed
+            _seed()
+        except Exception as e:
+            log.warning("Skipping user seed: %s", e)
+    except Exception as e:
+        # Don't crash the app if seeding fails — health endpoint still works
+        log.error("Schema/seed bootstrap failed: %s", e)
 
 
 app = FastAPI(
@@ -49,14 +90,25 @@ app = FastAPI(
     ],
 )
 
-# CORS — allow Next.js dev server
+# CORS — comma-separated origins via env, plus the local dev URLs by default.
+# Set CORS_ORIGINS="https://your-app.vercel.app" on Render to lock down to
+# the deployed frontend; "*" is fine for staging since there are no cookies.
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,*"
+_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    """Bootstrap the database on first boot. Idempotent."""
+    _ensure_schema_and_seed()
+
 
 # Register route modules
 app.include_router(dashboard_router)
@@ -106,8 +158,12 @@ def data_range(user_id: int = Depends(get_current_user_id)):
                             produced but unsupported by the data. Treat as a
                             rough guess, not a forecast.
 
-    The model always produces 365 days of predictions, so the UI can offer
-    any horizon up to 1 year. The tiers let the UI flag quality.
+    The forecast horizon is no longer hard-capped — users can pick any
+    future date even if the data is years old. The reliability tiers
+    let the UI surface confidence so a 2-year-out prediction is clearly
+    flagged as extrapolation rather than presented like a near-term
+    forecast. The backend retrains with a longer horizon on demand when
+    a request asks for a window beyond what's currently cached.
     """
     df = load_data(user_id)
     if df.empty:
@@ -116,9 +172,17 @@ def data_range(user_id: int = Depends(get_current_user_id)):
     earliest = df["Order Date"].min()
     latest = df["Order Date"].max()
     total_days = int((latest - earliest).days) + 1
-    forecast_start = latest + _pd.Timedelta(days=1)
-    max_horizon = 365  # hard cap from the Prophet model
-    forecast_end_max = latest + _pd.Timedelta(days=max_horizon)
+    # Forecasts are anchored on TODAY, not on the dataset's last date — so
+    # a 2022 dataset opened in 2026 still produces a "next 7 days" forecast
+    # for next week. forecastStart is the earliest date the UI's date
+    # pickers should allow.
+    today = _pd.Timestamp.now().normalize()
+    forecast_start = max(today + _pd.Timedelta(days=1), latest + _pd.Timedelta(days=1))
+    # Generous upper bound for date pickers — at least 5 years past today
+    # (or past the data, whichever is later). Just a UI hint; the backend
+    # retrains on demand for any window the user actually requests.
+    max_horizon = max(1825, total_days * 5)
+    forecast_end_max = forecast_start + _pd.Timedelta(days=max_horizon)
     reliable_days = max(7, int(total_days * 0.30))
     directional_days = total_days  # extrapolation starts past training size
     return {
