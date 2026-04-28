@@ -453,32 +453,36 @@ async def upload_file(
             {"uid": user_id, "fn": file.filename or "upload", "ri": to_import, "rs": skipped},
         ).scalar()
 
-        # Upsert categories
-        for _, r in norm[["categ_AR", "categ_EN"]].drop_duplicates().iterrows():
+        # Upsert categories — bulk
+        cat_rows = norm[["categ_AR", "categ_EN"]].drop_duplicates()
+        if not cat_rows.empty:
             conn.execute(
                 text("""
                     INSERT INTO categories (name_ar, name_en) VALUES (:ar, :en)
                     ON CONFLICT DO NOTHING
                 """),
-                {"ar": r["categ_AR"], "en": r["categ_EN"]},
+                [{"ar": r["categ_AR"], "en": r["categ_EN"]} for _, r in cat_rows.iterrows()],
             )
         cat_map = dict(conn.execute(text("SELECT name_en, id FROM categories")).all())
 
-        # Upsert products
+        # Upsert products — bulk
         prods = norm[["sku", "name_ar", "name_en", "categ_EN"]].drop_duplicates()
-        for _, r in prods.iterrows():
+        if not prods.empty:
             conn.execute(
                 text("""
                     INSERT INTO products (sku, name_ar, name_en, category_id, is_active)
                     VALUES (:sku, :ar, :en, :cid, TRUE)
                     ON CONFLICT (sku) DO NOTHING
                 """),
-                {
-                    "sku": r["sku"],
-                    "ar": str(r["name_ar"])[:100],
-                    "en": str(r["name_en"])[:100],
-                    "cid": cat_map.get(r["categ_EN"]),
-                },
+                [
+                    {
+                        "sku": r["sku"],
+                        "ar": str(r["name_ar"])[:100],
+                        "en": str(r["name_en"])[:100],
+                        "cid": cat_map.get(r["categ_EN"]),
+                    }
+                    for _, r in prods.iterrows()
+                ],
             )
         prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
@@ -492,7 +496,24 @@ async def upload_file(
 
         orders_df = norm[["order_reference", "order_datetime", "customer_name",
                           "time_period", "season", "occasion"]].drop_duplicates(subset=["order_reference"])
-        for _, r in orders_df.iterrows():
+
+        # Bulk insert via executemany — one round-trip per batch instead of
+        # one per row. Critical when the DB lives on a different host (free
+        # tier Render): a 50k-row file went from ~5 min of pure round-trips
+        # to a handful of seconds.
+        if not orders_df.empty:
+            order_payload = [
+                {
+                    "uid": upload_id,
+                    "oref": r["order_reference"],
+                    "odt": r["order_datetime"],
+                    "cname": r["customer_name"],
+                    "tp": r["time_period"],
+                    "sn": r["season"],
+                    "oc": r["occasion"],
+                }
+                for _, r in orders_df.iterrows()
+            ]
             conn.execute(
                 text("""
                     INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
@@ -506,9 +527,7 @@ async def upload_file(
                         season = EXCLUDED.season,
                         occasion = EXCLUDED.occasion
                 """),
-                {"uid": upload_id, "oref": r["order_reference"], "odt": r["order_datetime"],
-                 "cname": r["customer_name"], "tp": r["time_period"],
-                 "sn": r["season"], "oc": r["occasion"]},
+                order_payload,
             )
         order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 
@@ -523,21 +542,28 @@ async def upload_file(
                     {"ids": replaced_ids},
                 )
 
-        inserted = 0
+        # Bulk insert order_items in batches. Same reasoning as orders above —
+        # a 50k-line file becomes one INSERT per batch (~50 batches at
+        # batch_size=1000) instead of 50k separate INSERTs.
+        item_payload: list[dict] = []
         for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
             oid = order_map.get(r["order_reference"])
             pid = prod_map.get(r["sku"])
             if oid is None or pid is None:
                 continue
-            conn.execute(
-                text("""
-                    INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
-                    VALUES (:oid, :pid, :qty, :price, :cost)
-                """),
-                {"oid": oid, "pid": pid, "qty": int(r["quantity"]),
-                 "price": float(r["unit_price"]), "cost": float(r["unit_cost"])},
-            )
-            inserted += 1
+            item_payload.append({
+                "oid": oid, "pid": pid, "qty": int(r["quantity"]),
+                "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
+            })
+        inserted = len(item_payload)
+        if item_payload:
+            insert_stmt = text("""
+                INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
+                VALUES (:oid, :pid, :qty, :price, :cost)
+            """)
+            BATCH = 1000
+            for i in range(0, len(item_payload), BATCH):
+                conn.execute(insert_stmt, item_payload[i:i + BATCH])
 
     # Invalidate this user's caches so forecast/dashboard/menu see the new data
     data_loader_db.reload_data(user_id)
