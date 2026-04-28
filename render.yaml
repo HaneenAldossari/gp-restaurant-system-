@@ -1,0 +1,37 @@
+# Render blueprint — one-click deploy of backend + Postgres.
+#
+# Usage: in the Render dashboard, click "New +" → "Blueprint", point it at
+# this repo, and Render reads this file to provision both the web service
+# and the managed Postgres database. DATABASE_URL is wired automatically
+# via `fromDatabase`.
+#
+# After the first deploy, the FastAPI startup hook (`_ensure_schema_and_seed`
+# in main.py) will create the tables and insert teammate workspace users on
+# its own — no manual psql session needed.
+
+services:
+  - type: web
+    name: gp-restaurant-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gp-restaurant-db
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: CORS_ORIGINS
+        # Update this to the Vercel URL after the frontend is deployed.
+        # "*" is fine for staging (no cookies, X-User-Id is the only auth).
+        value: "*"
+
+databases:
+  - name: gp-restaurant-db
+    plan: free
+    databaseName: gp_restaurant
+    user: gp_admin
