@@ -356,6 +356,91 @@ def _optimal_price(
     }
 
 
+def _cost_lowering_suggestion(
+    current_price: float,
+    current_cost: float,
+    current_qty: int,
+    current_classification: str,
+    avg_margin: float,
+    avg_pop: float,
+    other_qty: float,
+) -> dict | None:
+    """
+    Suggest a unit-cost reduction when it's logically beneficial.
+
+    Cost reduction is independent of the price-elasticity tradeoff — demand
+    stays the same, profit per unit goes up. So when feasible it's a "free"
+    improvement on top of any price change. We surface it only when:
+
+      - Current cost > 1 SAR (anything tiny leaves no negotiation room).
+      - Current margin < 75% (already-very-profitable items don't need it).
+      - Classification is NOT "Puzzle". A Puzzle's bottleneck is demand, not
+        margin; pushing margin higher there is bike-shedding the wrong axis.
+        For Stars/Plowhorses/Dogs, lower cost is always a win.
+      - There's a realistic 5–30% reduction the supplier negotiation /
+        recipe-tweak / bulk-buy could plausibly achieve.
+
+    Target cost is whatever brings margin up to the menu average — that's
+    the cleanest classification break (Plowhorse → Star, Dog → Puzzle).
+    Capped at a 30% reduction so we don't suggest unrealistic supplier wins.
+    """
+    if current_price <= 0 or current_cost < 1:
+        return None
+    current_margin = (current_price - current_cost) / current_price * 100
+    if current_margin >= 75:
+        return None  # margin already strong; supplier negotiation has little to give
+    if current_classification == "Puzzle":
+        return None  # demand-limited, not margin-limited
+
+    # Cost that would lift margin to the menu average
+    target_cost_for_avg_margin = current_price * (1 - avg_margin / 100)
+    # Realistic floor: don't suggest more than a 30% supplier discount
+    realistic_floor = current_cost * 0.70
+    suggested = max(target_cost_for_avg_margin, realistic_floor)
+
+    # Round to a clean SAR value so the suggestion sounds achievable
+    suggested = round(suggested)
+    # Need at least a meaningful 5% reduction to be worth surfacing
+    if suggested >= current_cost or (current_cost - suggested) / current_cost < 0.05:
+        return None
+
+    reduction_pct = (current_cost - suggested) / current_cost * 100
+    new_margin = (current_price - suggested) / current_price * 100
+    pop = (current_qty / (other_qty + current_qty) * 100) if (other_qty + current_qty) > 0 else 0
+    new_classification = _classify(pop, new_margin, avg_pop, avg_margin)
+
+    # Profit lift = savings per unit × historical units sold
+    additional_profit = (current_cost - suggested) * current_qty
+
+    moves_class = new_classification != current_classification
+    if moves_class:
+        rationale = (
+            f"If the unit cost can be reduced to about SAR {suggested} "
+            f"(roughly {round(reduction_pct)}% off — supplier negotiation, "
+            f"bulk buy, or a small recipe change), this item moves from "
+            f"{current_classification} to {new_classification}. Demand isn't "
+            f"affected; the gain is pure margin."
+        )
+    else:
+        rationale = (
+            f"On top of the price change, lowering the unit cost by ~"
+            f"{round(reduction_pct)}% (to about SAR {suggested}) would lift "
+            f"profit further without touching demand. Worth a conversation "
+            f"with the supplier or a quick look at recipe ingredients."
+        )
+
+    return {
+        "currentCost": round(current_cost, 2),
+        "suggestedCost": int(suggested),
+        "reductionPct": round(reduction_pct, 1),
+        "additionalProfit": round(additional_profit, 2),
+        "currentClassification": current_classification,
+        "newClassification": new_classification,
+        "movesClassification": moves_class,
+        "rationale": rationale,
+    }
+
+
 def _break_even_price(
     current_profit: float, current_price: float, current_qty: int,
     effective_cost: float, elasticity: float,
@@ -580,6 +665,20 @@ def simulate_price_change(
             direction_label = "Keep the current price"
 
         change_pct = _pct(current_price, suggested_price) if current_price > 0 else None
+
+        # Cost-lowering bonus suggestion — surfaced when realistic and
+        # additive to the price change (works on any classification where
+        # margin is the limiting factor, not demand).
+        cost_lowering = _cost_lowering_suggestion(
+            current_price=current_price,
+            current_cost=current_cost,
+            current_qty=current_qty,
+            current_classification=current_classification,
+            avg_margin=avg_margin,
+            avg_pop=avg_pop,
+            other_qty=other_qty,
+        )
+
         optimal.update({
             "direction": direction,
             "directionLabel": direction_label,
@@ -595,6 +694,7 @@ def simulate_price_change(
             "projectedProfit": suggested_sim["newProfit"],
             "projectedMargin": suggested_sim["newMargin"],
             "profitChangePct": _pct(current_profit, suggested_sim["newProfit"]),
+            "costLowering": cost_lowering,
         })
 
     recommendations = {
