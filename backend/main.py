@@ -56,6 +56,16 @@ def _ensure_schema_and_seed() -> None:
             _seed()
         except Exception as e:
             log.warning("Skipping user seed: %s", e)
+        # Pre-load a synthetic sample dataset into every workspace that
+        # doesn't have data yet. Lets teammates open the deployed app
+        # and immediately see forecasts / dashboard / menu insights.
+        # They can delete it from Settings → Upload Data and replace
+        # with their own file.
+        try:
+            from seed_sample_data import seed_all_users as _seed_samples
+            _seed_samples()
+        except Exception as e:
+            log.warning("Skipping sample-data seed: %s", e)
     except Exception as e:
         # Don't crash the app if seeding fails — health endpoint still works
         log.error("Schema/seed bootstrap failed: %s", e)
