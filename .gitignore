@@ -50,5 +50,15 @@ venv/
 # Backend forecast cache (regenerated on first request)
 backend/cache/
 
+# Large generated data — kept out of git so the repo stays light. Files
+# stay on disk locally; the scripts that produce them (impute_products.py,
+# prophet_model_imputed.py, etc.) are committed.
+*.csv
+*.xlsx
+*.xls
+*.parquet
+data_pipeline/all_products_predictions_imputed.csv
+data_pipeline/product_sales_imputed_FINAL.xlsx
+
 # Claude Code
 .claude/
