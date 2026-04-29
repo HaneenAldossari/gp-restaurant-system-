@@ -73,7 +73,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         forecasts allocate more share to hot drinks and summer
 #         forecasts to cold drinks. Default mode back to top_down
 #         (per_product was misallocating sparse-history items to ~0).
-MODEL_VERSION = "v13"
+#   v14 = real Saudi temperature regressor via Open-Meteo archive
+#         (cached locally). The model finally uses actual weather
+#         instead of just the season one-hot, satisfying the report's
+#         claim about weather as a model input.
+MODEL_VERSION = "v14"
 
 
 def _cache_file(user_id: int) -> Path:

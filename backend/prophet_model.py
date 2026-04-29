@@ -121,6 +121,46 @@ def _add_season_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _attach_regressors(df: pd.DataFrame) -> pd.DataFrame:
+    """Add season one-hot columns AND the daily max-temperature column
+    that Prophet uses as a real-weather regressor. df must have a 'ds'
+    datetime column and a 'season' string column.
+
+    Temperature is fetched from Open-Meteo's archive (cached locally).
+    For dates beyond historical (i.e. future forecasts), a climate
+    average for the same month-day is used. Any remaining gaps are
+    filled with the dataset mean so Prophet never sees NaN."""
+    out = _add_season_columns(df)
+    out['temp_max'] = float('nan')
+
+    if not out.empty and 'ds' in out.columns:
+        try:
+            from weather import get_daily_temperatures
+            weather = get_daily_temperatures(out['ds'].min(), out['ds'].max())
+            if not weather.empty:
+                # Drop our placeholder NaN column before merge
+                out = out.drop(columns=['temp_max']).merge(
+                    weather[['ds', 'temp_max']], on='ds', how='left',
+                )
+        except Exception as e:
+            # Don't break training if weather fetch fails — fall back
+            # to a constant temperature column (Prophet treats it as
+            # a no-op regressor with zero learnable signal).
+            print(f"[weather] Skipped: {type(e).__name__}: {e}")
+
+    if out['temp_max'].isna().all():
+        # Total network failure — use a safe Saudi default so Prophet
+        # has a non-NaN regressor column. Acts as a constant offset
+        # which Prophet will absorb into the intercept.
+        out['temp_max'] = 28.0
+    elif out['temp_max'].isna().any():
+        # Partial gaps (e.g. very-far-future dates with no climate
+        # average yet) — fill with the available mean.
+        out['temp_max'] = out['temp_max'].fillna(out['temp_max'].mean())
+
+    return out
+
+
 def build_saudi_holidays(start, end) -> pd.DataFrame:
     """Saudi holiday calendar with realistic, phase-aware windows.
 
@@ -206,6 +246,9 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+REGRESSOR_COLS = SEASON_COLS + ['temp_max']
+
+
 def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prophet:
     """Tuned Prophet config for Saudi cafe data.
 
@@ -230,7 +273,7 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
         changepoint_prior_scale=0.01,
     )
     m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)
-    for col in SEASON_COLS:
+    for col in REGRESSOR_COLS:
         m.add_regressor(col)
     return m
 
@@ -260,7 +303,7 @@ def _train_one_product(
         .reset_index()
     )
     daily['season'] = daily['ds'].apply(compute_season)
-    daily = _add_season_columns(daily)
+    daily = _attach_regressors(daily)
 
     # Per-product time-of-day historical share so we can split the daily
     # forecast back into morning/afternoon/evening/night the same way
@@ -273,7 +316,7 @@ def _train_one_product(
     }
 
     model = _build_prophet(holidays_df)
-    model.fit(daily[['ds', 'y'] + SEASON_COLS])
+    model.fit(daily[['ds', 'y'] + REGRESSOR_COLS])
 
     future_dates = pd.date_range(
         start=daily['ds'].min(),
@@ -281,8 +324,8 @@ def _train_one_product(
     )
     future = pd.DataFrame({'ds': future_dates})
     future['season'] = future['ds'].apply(compute_season)
-    future = _add_season_columns(future)
-    fc = model.predict(future[['ds'] + SEASON_COLS])
+    future = _attach_regressors(future)
+    fc = model.predict(future[['ds'] + REGRESSOR_COLS])
     fc['yhat'] = fc['yhat'].clip(lower=0)
     return fc[['ds', 'yhat']], tp_ratio
 
@@ -392,11 +435,11 @@ def _run_top_down_for_tail(
         .rename_axis('ds').reset_index()
     )
     total_daily['season'] = total_daily['ds'].apply(compute_season)
-    total_daily = _add_season_columns(total_daily)
+    total_daily = _attach_regressors(total_daily)
 
     model = _build_prophet(holidays_df)
     try:
-        model.fit(total_daily[['ds', 'y'] + SEASON_COLS])
+        model.fit(total_daily[['ds', 'y'] + REGRESSOR_COLS])
     except Exception as e:
         print(f"  · tail aggregate fit skipped ({type(e).__name__}: {e})")
         return pd.DataFrame()
@@ -407,8 +450,8 @@ def _run_top_down_for_tail(
     )
     future = pd.DataFrame({'ds': future_dates})
     future['season'] = future['ds'].apply(compute_season)
-    future = _add_season_columns(future)
-    forecast = model.predict(future[['ds'] + SEASON_COLS])
+    future = _attach_regressors(future)
+    forecast = model.predict(future[['ds'] + REGRESSOR_COLS])
     forecast['yhat'] = forecast['yhat'].clip(lower=0)
     forecast = forecast[['ds', 'yhat']]
     forecast['dow'] = forecast['ds'].dt.day_name()
@@ -494,7 +537,7 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         .reset_index()
     )
     total_daily['season'] = total_daily['ds'].apply(compute_season)
-    total_daily = _add_season_columns(total_daily)
+    total_daily = _attach_regressors(total_daily)
 
     holidays_df = build_saudi_holidays(
         total_daily['ds'].min(),
@@ -506,8 +549,8 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     if split < len(total_daily):
         try:
             eval_model = _build_prophet(holidays_df)
-            eval_model.fit(total_daily.iloc[:split][['ds', 'y'] + SEASON_COLS])
-            test_pred = eval_model.predict(total_daily.iloc[split:][['ds'] + SEASON_COLS])
+            eval_model.fit(total_daily.iloc[:split][['ds', 'y'] + REGRESSOR_COLS])
+            test_pred = eval_model.predict(total_daily.iloc[split:][['ds'] + REGRESSOR_COLS])
             mae = mean_absolute_error(total_daily.iloc[split:]['y'], test_pred['yhat'])
             print(f"MAE (Test) — total daily sales: {round(mae, 2)}")
         except Exception as e:
@@ -515,7 +558,7 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
 
     # ── Production model: fit on FULL data ───────────────────────────────
     model = _build_prophet(holidays_df)
-    model.fit(total_daily[['ds', 'y'] + SEASON_COLS])
+    model.fit(total_daily[['ds', 'y'] + REGRESSOR_COLS])
 
     future_dates = pd.date_range(
         start=total_daily['ds'].min(),
@@ -523,8 +566,8 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     )
     future = pd.DataFrame({'ds': future_dates})
     future['season'] = future['ds'].apply(compute_season)
-    future = _add_season_columns(future)
-    forecast = model.predict(future[['ds'] + SEASON_COLS])
+    future = _attach_regressors(future)
+    forecast = model.predict(future[['ds'] + REGRESSOR_COLS])
     forecast['yhat'] = forecast['yhat'].clip(lower=0)
     forecast = forecast[['ds', 'yhat']]
     forecast['dow'] = forecast['ds'].dt.day_name()
