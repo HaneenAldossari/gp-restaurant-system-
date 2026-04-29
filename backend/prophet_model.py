@@ -367,7 +367,7 @@ def _run_per_product(df: pd.DataFrame, save_csv: bool, horizon_days: int) -> pd.
             'ds': ds_repeated,
             'time_period': tp_repeated,
             'product': product,
-            'yhat': yhat_repeated.clip(min=0).round().astype(int),
+            'yhat': yhat_repeated.clip(min=0),
         }))
 
     # ── Long-tail: re-use the top-down disaggregation on the same total ──
@@ -492,7 +492,7 @@ def _run_top_down_for_tail(
     fallback = full_grid['overall_product_share'] * full_grid['overall_tp_share']
     full_grid['fraction'] = full_grid['fraction'].fillna(0.0)
     full_grid['fraction'] = np.where(full_grid['fraction'] > 0, full_grid['fraction'], fallback)
-    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0).round().astype(int)
+    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0)
     return full_grid[['ds', 'time_period', 'product', 'yhat_value']].rename(columns={'yhat_value': 'yhat'})
 
 
@@ -648,7 +648,7 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         fallback,
     )
 
-    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0).round().astype(int)
+    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0)
     pred_df = full_grid[['ds', 'time_period', 'product', 'yhat_value']].rename(
         columns={'yhat_value': 'yhat'}
     )

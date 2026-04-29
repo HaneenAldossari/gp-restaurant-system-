@@ -77,7 +77,10 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         (cached locally). The model finally uses actual weather
 #         instead of just the season one-hot, satisfying the report's
 #         claim about weather as a model input.
-MODEL_VERSION = "v14"
+#   v15 = keep yhat as float through the cache. Per-cell int rounding
+#         was zeroing out the long tail (a 19-units-a-year item floors
+#         to 0 in every cell, summing to 0 for the entire window).
+MODEL_VERSION = "v15"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -388,7 +391,13 @@ def _bake_baseline_scale(
           f"predicted={predicted_menu_per_day:.1f}/day)")
 
     out = predictions.copy()
-    out["yhat"] = (out["yhat"].astype(float) * global_scale).clip(lower=0).round().astype(int)
+    # Keep yhat as float in the cache. Rounding to int at this stage
+    # zeros out the long tail (e.g. Banana Split Waffle = 0.05/day floors
+    # to 0, then summing 90 zeros gives a 0-unit forecast for an item
+    # that genuinely sold 19 units the prior year). Final rounding
+    # happens at the route-handler level via _round_daily_to_total once
+    # values are summed for display.
+    out["yhat"] = (out["yhat"].astype(float) * global_scale).clip(lower=0)
     return out
 
 
