@@ -68,7 +68,12 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         training time. Eliminates window-dependent rescaling bug
 #         (same date returning different values across "Next Week" vs
 #         "Next Month").
-MODEL_VERSION = "v12"
+#   v13 = season-aware disaggregation. Top-down disaggregation share
+#         keyed by (product × season × dow × time_period) so winter
+#         forecasts allocate more share to hot drinks and summer
+#         forecasts to cold drinks. Default mode back to top_down
+#         (per_product was misallocating sparse-history items to ~0).
+MODEL_VERSION = "v13"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -365,10 +370,11 @@ def _bake_baseline_scale(
         return predictions
 
     global_scale = historical_menu_per_day / predicted_menu_per_day
-    # Clamp the global scale so we don't go too aggressive in either
-    # direction. 0.5–5× is plenty to correct typical Prophet under/over
-    # prediction without amplifying random noise.
-    global_scale = max(0.5, min(global_scale, 5.0))
+    # Clamp the global scale to a wide band — Prophet without yearly
+    # seasonality can drift to 10× either side of the historical mean,
+    # so the rescue needs reach. The 20× cap still rules out catastrophic
+    # noise (e.g. predicted=1 unit/day on broken training).
+    global_scale = max(0.1, min(global_scale, 20.0))
 
     if abs(global_scale - 1.0) < 0.05:
         return predictions  # already within ±5% of historical, leave alone

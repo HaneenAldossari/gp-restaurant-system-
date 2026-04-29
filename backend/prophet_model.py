@@ -50,7 +50,7 @@ from sklearn.metrics import mean_absolute_error
 #                   that are washed out at the aggregate level.
 #                   Recommended on localhost where speed isn't a
 #                   constraint and you need accurate per-item peaks.
-FORECAST_MODE = os.getenv("FORECAST_MODE", "per_product").lower()
+FORECAST_MODE = os.getenv("FORECAST_MODE", "top_down").lower()
 # Cap on how many products get their own Prophet in per_product mode.
 # The long tail (sparse, low-volume items) falls back to top-down
 # disaggregation so we don't waste minutes fitting models for items
@@ -206,15 +206,20 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = True) -> Prophet:
+def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prophet:
     """Tuned Prophet config for Saudi cafe data.
 
-    yearly_seasonality is ON: without it, Prophet's trend extrapolates
-    far above the training mean when the forecast window sits years
-    past data_end (we observed predictions blowing up to ~10× the
-    historical baseline on 2022 data viewed in 2026). The yearly
-    component anchors predictions on what the same time-of-year looked
-    like in the training data."""
+    yearly_seasonality is OFF — with only one year of training data
+    Prophet's yearly Fourier component oscillates uncontrollably past
+    the first repetition cycle (we observed Dec 2024 onward collapsing
+    to zero with it on). Year-of-data effects are instead handled by:
+      - the season one-hot regressor (Winter/Spring/Summer/Autumn)
+      - the holidays mechanism (Ramadan, Eid, payday, etc.)
+      - the season-aware disaggregation share (so winter forecasts
+        skew hot drinks, summer forecasts skew cold drinks)
+    The trend without yearly_seasonality stays close to the training
+    mean (changepoint_prior_scale=0.01 is conservative); the global
+    baseline_scale post-step normalises the scale to historical levels."""
     m = Prophet(
         daily_seasonality=False,
         weekly_seasonality=False,  # added manually below for stronger weight
@@ -523,26 +528,28 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     forecast['yhat'] = forecast['yhat'].clip(lower=0)
     forecast = forecast[['ds', 'yhat']]
     forecast['dow'] = forecast['ds'].dt.day_name()
+    forecast['season'] = forecast['ds'].apply(compute_season)
 
-    # ── Per-product, per-(day-of-week, time_period) historical share ─────
-    # Numerator: this product's qty within (dow, time_period). Denominator:
-    # total qty within the same (dow, time_period). Result: fraction of the
-    # daily total that historically went to (product, time_period) on that
-    # day-of-week. Captures "Spanish Latte sells most on Sat afternoons"
-    # without needing a per-product Prophet.
+    # ── Per-product, per-(season, dow, time_period) historical share ─────
+    # CRITICAL: keying the share by SEASON is what lets the disaggregation
+    # shift hot drinks ↑ in winter and cold drinks ↑ in summer. Without the
+    # season key, the share for each product was fixed across the whole
+    # year, so a December forecast got the same product mix as an August
+    # one — which is why Hot Spanish Latte (a winter staple in Saudi
+    # cafés) was getting near-zero predictions in December.
     pivot_num = (
-        df.groupby(['name', 'dow', 'time_period'])['quantity']
+        df.groupby(['name', 'season', 'dow', 'time_period'])['quantity']
         .sum()
         .reset_index()
         .rename(columns={'quantity': 'product_qty'})
     )
     pivot_den = (
-        df.groupby(['dow', 'time_period'])['quantity']
+        df.groupby(['season', 'dow', 'time_period'])['quantity']
         .sum()
         .reset_index()
         .rename(columns={'quantity': 'total_qty'})
     )
-    share = pivot_num.merge(pivot_den, on=['dow', 'time_period'])
+    share = pivot_num.merge(pivot_den, on=['season', 'dow', 'time_period'])
     share['fraction'] = np.where(
         share['total_qty'] > 0,
         share['product_qty'] / share['total_qty'],
@@ -571,17 +578,19 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     # Build the Cartesian product (forecast_day × product × time_period)
     # via pandas merges instead of a Python triple-loop. On the free
     # tier this drops disaggregation from ~30-60s to a few seconds.
-    full_grid = forecast[['ds', 'dow', 'yhat']].merge(
+    full_grid = forecast[['ds', 'dow', 'season', 'yhat']].merge(
         overall_product_share, how='cross'
     )
     full_grid = full_grid.merge(overall_tp_share, how='cross')
     full_grid = full_grid.rename(columns={'name': 'product'})
 
-    # Attach the per-(product, dow, time_period) share where it exists
+    # Attach the per-(product, season, dow, time_period) share. Season
+    # axis is what makes hot drinks dominate winter forecasts and cold
+    # drinks dominate summer forecasts.
     full_grid = full_grid.merge(
-        share[['name', 'dow', 'time_period', 'fraction']]
+        share[['name', 'season', 'dow', 'time_period', 'fraction']]
         .rename(columns={'name': 'product'}),
-        on=['product', 'dow', 'time_period'],
+        on=['product', 'season', 'dow', 'time_period'],
         how='left',
     )
 
