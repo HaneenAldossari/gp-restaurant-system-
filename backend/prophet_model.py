@@ -242,49 +242,63 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         .rename(columns={'quantity': 'total_qty'})
     )
     share = pivot_num.merge(pivot_den, on=['dow', 'time_period'])
-    share['fraction'] = share.apply(
-        lambda r: r['product_qty'] / r['total_qty'] if r['total_qty'] > 0 else 0.0,
-        axis=1,
+    share['fraction'] = np.where(
+        share['total_qty'] > 0,
+        share['product_qty'] / share['total_qty'],
+        0.0,
     )
 
-    # Backstop: when a (dow, time_period) bucket has zero total in history,
-    # fall back to the product's overall share so the forecast isn't blank
-    # on that bucket.
-    overall_per_product = (
-        df.groupby('name')['quantity'].sum() / max(df['quantity'].sum(), 1)
-    ).to_dict()
-    overall_tp_ratio = {tp: 0.0 for tp in TIME_ORDER}
+    # Fallback share for (product, dow, time_period) buckets that have
+    # zero history: product's overall share × overall tp share. Built as
+    # a separate frame so we can fillna against it after the main merge.
+    total_qty = float(df['quantity'].sum()) or 1.0
+    overall_product_share = (
+        df.groupby('name')['quantity'].sum() / total_qty
+    ).reset_index().rename(columns={'quantity': 'overall_product_share'})
+
     tp_totals = df.groupby('time_period')['quantity'].sum()
     tp_total_sum = float(tp_totals.sum()) or 1.0
-    for tp in TIME_ORDER:
-        overall_tp_ratio[tp] = float(tp_totals.get(tp, 0)) / tp_total_sum
+    overall_tp_share = pd.DataFrame({
+        'time_period': TIME_ORDER,
+        'overall_tp_share': [float(tp_totals.get(tp, 0)) / tp_total_sum for tp in TIME_ORDER],
+    })
 
-    product_names = list(overall_per_product.keys())
-    share_lookup: dict[tuple[str, str, str], float] = {
-        (r['name'], r['dow'], r['time_period']): float(r['fraction'])
-        for _, r in share.iterrows()
-    }
+    product_names = list(overall_product_share['name'])
+    dows = forecast['dow'].unique()
 
-    # ── Disaggregate the daily forecast ──────────────────────────────────
-    rows = []
-    for _, fc in forecast.iterrows():
-        ds = fc['ds']
-        dow = fc['dow']
-        daily_total = float(fc['yhat'])
-        for product in product_names:
-            for tp in TIME_ORDER:
-                frac = share_lookup.get((product, dow, tp))
-                if frac is None or frac <= 0:
-                    # Fallback: product's overall share × overall tp share
-                    frac = overall_per_product.get(product, 0.0) * overall_tp_ratio[tp]
-                yhat = daily_total * frac
-                rows.append({
-                    'ds': ds,
-                    'time_period': tp,
-                    'yhat': int(round(max(0.0, yhat))),
-                    'product': product,
-                })
-    pred_df = pd.DataFrame(rows)
+    # ── Disaggregate the daily forecast — fully vectorized ───────────────
+    # Build the Cartesian product (forecast_day × product × time_period)
+    # via pandas merges instead of a Python triple-loop. On the free
+    # tier this drops disaggregation from ~30-60s to a few seconds.
+    full_grid = forecast[['ds', 'dow', 'yhat']].merge(
+        overall_product_share, how='cross'
+    )
+    full_grid = full_grid.merge(overall_tp_share, how='cross')
+    full_grid = full_grid.rename(columns={'name': 'product'})
+
+    # Attach the per-(product, dow, time_period) share where it exists
+    full_grid = full_grid.merge(
+        share[['name', 'dow', 'time_period', 'fraction']]
+        .rename(columns={'name': 'product'}),
+        on=['product', 'dow', 'time_period'],
+        how='left',
+    )
+
+    # Where (product, dow, tp) had zero history, fall back to
+    # overall_product_share × overall_tp_share. Otherwise use the
+    # observed fraction.
+    fallback = full_grid['overall_product_share'] * full_grid['overall_tp_share']
+    full_grid['fraction'] = full_grid['fraction'].fillna(0.0)
+    full_grid['fraction'] = np.where(
+        full_grid['fraction'] > 0,
+        full_grid['fraction'],
+        fallback,
+    )
+
+    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0).round().astype(int)
+    pred_df = full_grid[['ds', 'time_period', 'product', 'yhat_value']].rename(
+        columns={'yhat_value': 'yhat'}
+    )
 
     # Attach observed values where they exist so the route layer can
     # filter actual vs future rows correctly.
