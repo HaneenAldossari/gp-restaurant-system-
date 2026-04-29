@@ -193,9 +193,71 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         df['date'].max() + pd.Timedelta(days=horizon_days),
     )
 
+    # Long-tail items (< 100 total units sold across the entire history)
+    # don't have enough signal for Prophet to learn anything useful, and
+    # fitting one model per item dominates the wall-clock time on slow
+    # CPUs. Use a flat historical-average baseline for them instead — the
+    # forecast is honest about what we know.
+    LOW_VOLUME_THRESHOLD = 100
+    low_volume_names = [
+        n for n, v in product_sales.items() if int(v) < LOW_VOLUME_THRESHOLD
+    ]
+    main_names = [n for n in top_product_names if n not in set(low_volume_names)]
+    if low_volume_names:
+        print(f"Long-tail fallback: {len(low_volume_names)} products with <{LOW_VOLUME_THRESHOLD} units → flat baseline")
+
     all_predictions = []
 
-    for product in top_product_names:
+    # Helper: build a deterministic flat-baseline prediction frame so the
+    # downstream slicing / aggregation logic doesn't need to know whether
+    # a product was Prophet-fit or fallback-projected.
+    def _baseline_predictions(product_df: pd.DataFrame, product: str) -> pd.DataFrame:
+        daily = product_df.groupby('date', as_index=False)['quantity'].sum()
+        daily.columns = ['ds', 'y']
+        if daily.empty:
+            return pd.DataFrame()
+        all_dates = pd.date_range(daily['ds'].min(), daily['ds'].max())
+        daily = daily.set_index('ds').reindex(all_dates).fillna(0.0).rename_axis('ds').reset_index()
+        avg_per_day = float(daily['y'].mean())
+
+        future_dates = pd.date_range(
+            start=daily['ds'].min(),
+            end=daily['ds'].max() + pd.Timedelta(days=horizon_days),
+        )
+
+        tp_totals = product_df.groupby('time_period')['quantity'].sum()
+        tp_total_sum = float(tp_totals.sum())
+        tp_ratio = (
+            {tp: float(tp_totals.get(tp, 0)) / tp_total_sum for tp in TIME_ORDER}
+            if tp_total_sum > 0
+            else {tp: 1.0 / len(TIME_ORDER) for tp in TIME_ORDER}
+        )
+
+        rows = []
+        for ds in future_dates:
+            for tp in TIME_ORDER:
+                rows.append({
+                    'ds': ds,
+                    'time_period': tp,
+                    'yhat': round(avg_per_day * tp_ratio[tp]),
+                })
+        out = pd.DataFrame(rows)
+        observed = product_df.groupby(['date', 'time_period'], as_index=False)['quantity'].sum()
+        observed.columns = ['ds', 'time_period', 'y']
+        out = out.merge(observed, on=['ds', 'time_period'], how='left')
+        out['product'] = product
+        out['type'] = out['y'].apply(lambda x: 'actual' if pd.notna(x) else 'future')
+        out['yhat'] = out['yhat'].astype(int)
+        out['percentage_error'] = pd.Series([pd.NA] * len(out), dtype='Int64').astype(str) + '%'
+        return out[['ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period']]
+
+    for product in low_volume_names:
+        product_df = df[df['name'] == product]
+        baseline = _baseline_predictions(product_df, product)
+        if not baseline.empty:
+            all_predictions.append(baseline)
+
+    for product in main_names:
         print(f"Processing: {product}")
 
         product_df = df[df['name'] == product]

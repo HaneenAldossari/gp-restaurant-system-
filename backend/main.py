@@ -114,10 +114,42 @@ app.add_middleware(
 )
 
 
+def _prewarm_forecasts() -> None:
+    """Trigger Prophet training for each seeded user in a background
+    thread. By the time a tester clicks the Forecasting page, the
+    predictions DataFrame is already cached, so the page loads instantly
+    instead of blocking for 5-12 minutes on the free-tier CPU.
+
+    Errors here are logged and swallowed — the app still works without
+    pre-warming, the first forecast just takes the long path."""
+    import threading
+
+    def _warm():
+        try:
+            from routes_forecast import _get_predictions
+            with get_engine().connect() as conn:
+                user_ids = [r[0] for r in conn.execute(text("SELECT id FROM users ORDER BY id")).fetchall()]
+            for uid in user_ids:
+                try:
+                    log.info("Pre-warming forecast cache for user %s", uid)
+                    _get_predictions(uid)
+                    log.info("Pre-warm complete for user %s", uid)
+                except Exception as e:
+                    log.warning("Pre-warm skipped for user %s: %s", uid, e)
+        except Exception as e:
+            log.warning("Forecast pre-warm thread failed: %s", e)
+
+    threading.Thread(target=_warm, daemon=True, name="prophet-prewarm").start()
+
+
 @app.on_event("startup")
 def _startup() -> None:
     """Bootstrap the database on first boot. Idempotent."""
     _ensure_schema_and_seed()
+    # Kick off Prophet training in the background. Don't block startup —
+    # health checks need to respond immediately.
+    if os.getenv("PREWARM_FORECASTS", "true").lower() in ("1", "true", "yes"):
+        _prewarm_forecasts()
 
 
 # Register route modules
