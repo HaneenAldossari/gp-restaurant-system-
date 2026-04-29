@@ -119,12 +119,13 @@ def _compute_occasion(dt) -> str:
 
     # Saudi payday window — salaries land on the 27th of each Gregorian
     # month; the post-payday spending spike runs through about day 5 of
-    # the following month. Treated as one continuous "Payday" window so
-    # any week that contains the 27th (or its spillover) is labelled
-    # consistently. Placed before weekend so a Friday-the-27th surfaces
-    # the (stronger) payday signal.
-    if d.day >= 27 or d.day <= 5:
+    # the following month. The anchor day (27th) is labelled "Payday";
+    # the spillover days get "Post-payday spending" so the UI can show
+    # which day actually IS payday rather than every day in the window.
+    if d.day == 27:
         return "Payday"
+    if d.day >= 28 or d.day <= 5:
+        return "Post-payday spending"
 
     # Saudi weekend = Friday (4) and Saturday (5)
     if d.weekday() in (4, 5):

@@ -62,7 +62,14 @@ def compute_occasion(d) -> str:
     """Display-only label used by the API to tell the manager *why* a
     date is special. The model itself does not consume this string —
     it consumes the holidays DataFrame from `build_saudi_holidays` and
-    Prophet's weekly_seasonality."""
+    Prophet's weekly_seasonality.
+
+    Distinguishes the anchor day (the 27th of each Gregorian month —
+    when civil-servant salaries land) from the spillover spending
+    window that follows. The model treats both as one continuous
+    `payday_week` holiday under the hood; the label split is purely
+    so the UI can say "Payday: Apr 27" rather than "Payday: Apr 30"
+    for a forecast that starts mid-window."""
     ts = pd.Timestamp(d)
     try:
         h = Gregorian(ts.year, ts.month, ts.day).to_hijri()
@@ -76,8 +83,11 @@ def compute_occasion(d) -> str:
         pass
     if ts.month == 9 and ts.day == 23:
         return "Saudi National Day"
-    if is_payday(ts):
+    if ts.day == 27:
         return "Payday"
+    if is_payday(ts):
+        # day 28-31 of this month or day 1-5 of next month
+        return "Post-payday spending"
     if ts.weekday() in (4, 5):
         return "Weekend"
     return "Normal Day"
