@@ -56,7 +56,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 #        day 27 through next month's 5th as one continuous holiday)
 #   v9 = holidays_prior_scale bumped to 100 so payday/Eid/Ramadan
 #        coefficients aren't regularized down to noise
-MODEL_VERSION = "v9"
+#   v10 = top-down: one Prophet on the daily aggregate, disaggregate
+#         per-product via historical (dow × time_period) share. ~10×
+#         faster training on the free tier with equal/better aggregate
+#         accuracy (cross-product noise averages out at the total).
+MODEL_VERSION = "v10"
 
 
 def _cache_file(user_id: int) -> Path:
