@@ -148,7 +148,13 @@ def _startup() -> None:
     _ensure_schema_and_seed()
     # Kick off Prophet training in the background. Don't block startup —
     # health checks need to respond immediately.
-    if os.getenv("PREWARM_FORECASTS", "true").lower() in ("1", "true", "yes"):
+    # Pre-warm DEFAULT OFF — on Render's 0.1-CPU / 512MB free tier the
+    # background training thread was getting OOM-killed mid-fit, leaving
+    # the cache lock held by a dead thread and causing every subsequent
+    # forecast request to block forever. Better to take the one-time
+    # ~30s wait on the first user click than risk the deadlock.
+    # Set PREWARM_FORECASTS=true on Render only when on a paid plan.
+    if os.getenv("PREWARM_FORECASTS", "false").lower() in ("1", "true", "yes"):
         _prewarm_forecasts()
 
 

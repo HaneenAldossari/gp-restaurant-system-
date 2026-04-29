@@ -107,16 +107,23 @@ DEFAULT_HORIZON_DAYS = 1095  # ~3 years (floor)
 
 
 def _default_horizon_days(data_end: pd.Timestamp) -> int:
-    """Compute the horizon the cache should cover so any "next N days from
-    today" request lands inside cached predictions. Without this, demos on
-    old data viewed today (e.g. 2022 data in 2026) caused every forecast
-    click to invalidate the cache and trigger a slow full retrain on the
-    free-tier CPU."""
+    """Compute the horizon the cache should cover so the most common
+    user request ("next 7 / 30 / 90 days from today") lands inside the
+    cached predictions.
+
+    Bounded to a tight window past today (90 days) because the
+    disaggregation step on Render's 0.1-CPU / 512MB free tier needs to
+    materialize one row per (date × product × time_period). With a
+    1500-day horizon that's ~800k rows and tens of seconds even on the
+    vectorized path; with 90 days past today it's well under 100k rows
+    and predictably fast."""
     today = pd.Timestamp.now().normalize()
     days_since_data = max(0, int((today - pd.Timestamp(data_end)).days))
-    # Cover up to today + 365 days of forecast in the cache. Adding 30
-    # days of buffer absorbs adjacent requests without cache churn.
-    return max(DEFAULT_HORIZON_DAYS, days_since_data + 365 + 30)
+    # Cover today + 90 days. Adding the gap from data_end to today is
+    # required because the cache stores predictions from data_end onward;
+    # without it the cache wouldn't reach today and every "next 7 days"
+    # request would invalidate and retrain from scratch.
+    return days_since_data + 90
 
 
 # ─────────────────────────────────────────────────────────────────────────
