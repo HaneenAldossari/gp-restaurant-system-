@@ -60,7 +60,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         per-product via historical (dow × time_period) share. ~10×
 #         faster training on the free tier with equal/better aggregate
 #         accuracy (cross-product noise averages out at the total).
-MODEL_VERSION = "v10"
+#   v11 = FORECAST_MODE switch: per_product trains one Prophet for the
+#         top-N items (catches item-specific Eid/Ramadan spikes that
+#         get washed out at the aggregate level) + extended Eid windows
+#         with pre-Eid shopping rush + weak yearly seasonality.
+MODEL_VERSION = "v11"
 
 
 def _cache_file(user_id: int) -> Path:

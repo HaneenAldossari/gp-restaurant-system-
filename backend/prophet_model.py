@@ -30,11 +30,32 @@ enrichment.
 """
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 from prophet import Prophet
 import numpy as np
 from hijri_converter import Gregorian
 from sklearn.metrics import mean_absolute_error
+
+
+# FORECAST_MODE switch:
+#   "top_down"    — one Prophet on the daily aggregate; fast, good for
+#                   free-tier hosting; per-product peaks get diluted
+#                   because they're averaged into the menu total before
+#                   training. (default — safe everywhere)
+#   "per_product" — one Prophet per top-N products; slower (~30s on a
+#                   modern laptop, minutes on Render free tier) but
+#                   captures item-specific Eid/Ramadan/payday spikes
+#                   that are washed out at the aggregate level.
+#                   Recommended on localhost where speed isn't a
+#                   constraint and you need accurate per-item peaks.
+FORECAST_MODE = os.getenv("FORECAST_MODE", "top_down").lower()
+# Cap on how many products get their own Prophet in per_product mode.
+# The long tail (sparse, low-volume items) falls back to top-down
+# disaggregation so we don't waste minutes fitting models for items
+# with 5 data points.
+PER_PRODUCT_TOP_N = int(os.getenv("FORECAST_PER_PRODUCT_TOP_N", "30"))
 
 
 SEASONS = ["Winter", "Spring", "Summer", "Autumn"]
@@ -101,9 +122,26 @@ def _add_season_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_saudi_holidays(start, end) -> pd.DataFrame:
-    """One continuous payday window from the 27th through next month's 5th
-    (upper_window=9), plus the religious + national days. See git
-    history for the data analysis that drove this calendar shape."""
+    """Saudi holiday calendar with realistic, phase-aware windows.
+
+    Real Saudi café behaviour around Eid is a 3-phase pattern, NOT a
+    single uniform lift:
+      • Pre-Eid (3 days before)   — strong spike: shopping, gifts,
+                                     family preparations
+      • Eid days themselves       — modest or slight dip: families at
+                                     home, places of worship busy
+      • Post-Eid bounce (1-3 after) — strong spike: visits, gatherings
+
+    Splitting Eid into three holidays gives each phase its own
+    coefficient instead of averaging them into one mushy "Eid window"
+    that under-predicts the pre/post peaks AND over-predicts the Eid-day
+    flatness.
+
+    Other holidays:
+      • Ramadan whole month — single window (devotional pattern dominates)
+      • Saudi National Day — 1 day before + the day + 1 after
+      • Payday week — anchor day 27 + spillover through next-month-5
+    """
     start_t = pd.Timestamp(start) - pd.Timedelta(days=35)
     end_t = pd.Timestamp(end) + pd.Timedelta(days=35)
 
@@ -122,21 +160,40 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
             if h.month == 10 and h.day == 1:
                 key = ("eid_fitr", cur.date().isoformat())
                 if key not in seen:
-                    rows.append({"holiday": "eid_fitr", "ds": cur,
+                    # 3-phase split so pre / during / post each get
+                    # their own learnable coefficient. Prophet requires
+                    # lower_window <= 0 <= upper_window, so each phase
+                    # is anchored on a different date relative to Eid:
+                    #   pre  : 3 days before, spanning -3..-1
+                    #   day  : on Eid 1, spanning 0..+2
+                    #   post : 3 days after, spanning 0..+2
+                    pre_anchor = cur - pd.Timedelta(days=3)
+                    post_anchor = cur + pd.Timedelta(days=3)
+                    rows.append({"holiday": "eid_fitr_pre", "ds": pre_anchor,
+                                 "lower_window": 0, "upper_window": 2})
+                    rows.append({"holiday": "eid_fitr_day", "ds": cur,
+                                 "lower_window": 0, "upper_window": 2})
+                    rows.append({"holiday": "eid_fitr_post", "ds": post_anchor,
                                  "lower_window": 0, "upper_window": 2})
                     seen.add(key)
             if h.month == 12 and h.day == 10:
                 key = ("eid_adha", cur.date().isoformat())
                 if key not in seen:
-                    rows.append({"holiday": "eid_adha", "ds": cur,
+                    pre_anchor = cur - pd.Timedelta(days=3)
+                    post_anchor = cur + pd.Timedelta(days=4)
+                    rows.append({"holiday": "eid_adha_pre", "ds": pre_anchor,
+                                 "lower_window": 0, "upper_window": 2})
+                    rows.append({"holiday": "eid_adha_day", "ds": cur,
                                  "lower_window": 0, "upper_window": 3})
+                    rows.append({"holiday": "eid_adha_post", "ds": post_anchor,
+                                 "lower_window": 0, "upper_window": 2})
                     seen.add(key)
         except Exception:
             pass
 
         if cur.month == 9 and cur.day == 23:
             rows.append({"holiday": "saudi_national_day", "ds": cur,
-                         "lower_window": 0, "upper_window": 0})
+                         "lower_window": -1, "upper_window": 1})
 
         if cur.day == 27:
             rows.append({"holiday": "payday_week", "ds": cur,
@@ -149,13 +206,18 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_prophet(holidays_df: pd.DataFrame) -> Prophet:
-    """Tuned Prophet config for Saudi cafe data. Documented elsewhere why
-    each prior is what it is."""
+def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = True) -> Prophet:
+    """Tuned Prophet config for Saudi cafe data.
+
+    yearly_seasonality is on by default with a weak prior — it helps when
+    the forecast extends past a year-end boundary (e.g. December retail
+    bumps) but is regularised down so it doesn't overfit on a single year
+    of training data. Set with_yearly=False for very short windows where
+    the yearly cycle is mathematically un-fittable."""
     m = Prophet(
         daily_seasonality=False,
         weekly_seasonality=False,  # added manually below for stronger weight
-        yearly_seasonality=False,
+        yearly_seasonality=with_yearly,
         holidays=holidays_df if not holidays_df.empty else None,
         seasonality_prior_scale=25.0,
         holidays_prior_scale=100.0,
@@ -167,12 +229,237 @@ def _build_prophet(holidays_df: pd.DataFrame) -> Prophet:
     return m
 
 
+def _train_one_product(
+    product_df: pd.DataFrame,
+    holidays_df: pd.DataFrame,
+    horizon_days: int,
+) -> tuple[pd.DataFrame, dict[str, float]]:
+    """Train one Prophet on a single product's daily totals and return
+    its forecast plus the historical time-of-day distribution. Used by
+    the per_product path.
+
+    Returns (forecast_df, tp_ratio_dict) where forecast_df has columns
+    ds and yhat (clipped to >= 0)."""
+    daily = product_df.groupby('date', as_index=False)['quantity'].sum()
+    daily.columns = ['ds', 'y']
+    if daily.empty:
+        return pd.DataFrame(columns=['ds', 'yhat']), {tp: 0.25 for tp in TIME_ORDER}
+
+    all_dates = pd.date_range(daily['ds'].min(), daily['ds'].max())
+    daily = (
+        daily.set_index('ds')
+        .reindex(all_dates)
+        .fillna(0.0)
+        .rename_axis('ds')
+        .reset_index()
+    )
+    daily['season'] = daily['ds'].apply(compute_season)
+    daily = _add_season_columns(daily)
+
+    # Per-product time-of-day historical share so we can split the daily
+    # forecast back into morning/afternoon/evening/night the same way
+    # top-down mode does.
+    tp_totals = product_df.groupby('time_period')['quantity'].sum()
+    tp_total_sum = float(tp_totals.sum()) or 1.0
+    tp_ratio = {
+        tp: float(tp_totals.get(tp, 0)) / tp_total_sum if tp_total_sum > 0 else 0.25
+        for tp in TIME_ORDER
+    }
+
+    model = _build_prophet(holidays_df, with_yearly=len(daily) >= 200)
+    model.fit(daily[['ds', 'y'] + SEASON_COLS])
+
+    future_dates = pd.date_range(
+        start=daily['ds'].min(),
+        end=daily['ds'].max() + pd.Timedelta(days=horizon_days),
+    )
+    future = pd.DataFrame({'ds': future_dates})
+    future['season'] = future['ds'].apply(compute_season)
+    future = _add_season_columns(future)
+    fc = model.predict(future[['ds'] + SEASON_COLS])
+    fc['yhat'] = fc['yhat'].clip(lower=0)
+    return fc[['ds', 'yhat']], tp_ratio
+
+
+def _run_per_product(df: pd.DataFrame, save_csv: bool, horizon_days: int) -> pd.DataFrame:
+    """Per-product Prophet fits for the top-N best-selling products,
+    plus a top-down fallback for the long tail. Captures item-specific
+    holiday spikes (e.g. desserts during Eid) that get averaged away in
+    pure top-down mode."""
+    product_volume = df.groupby('name')['quantity'].sum().sort_values(ascending=False)
+    top_products = product_volume.head(PER_PRODUCT_TOP_N).index.tolist()
+    long_tail = [n for n in product_volume.index if n not in set(top_products)]
+
+    holidays_df = build_saudi_holidays(
+        df['date'].min(),
+        df['date'].max() + pd.Timedelta(days=horizon_days),
+    )
+
+    print(f"[per_product] Training {len(top_products)} individual Prophets; "
+          f"{len(long_tail)} long-tail items use top-down fallback")
+
+    # ── Per-product Prophet fits for the top N ──────────────────────────
+    rows: list[pd.DataFrame] = []
+    for product in top_products:
+        product_df = df[df['name'] == product]
+        try:
+            forecast, tp_ratio = _train_one_product(product_df, holidays_df, horizon_days)
+        except Exception as e:
+            print(f"  · {product}: skipped ({type(e).__name__}: {e})")
+            continue
+        # Expand daily forecast across the 4 time_period buckets using
+        # this product's own historical distribution.
+        ds_repeated = np.tile(forecast['ds'].values, len(TIME_ORDER))
+        tp_repeated = np.repeat(TIME_ORDER, len(forecast))
+        yhat_repeated = np.concatenate([
+            forecast['yhat'].values * tp_ratio[tp] for tp in TIME_ORDER
+        ])
+        rows.append(pd.DataFrame({
+            'ds': ds_repeated,
+            'time_period': tp_repeated,
+            'product': product,
+            'yhat': yhat_repeated.clip(min=0).round().astype(int),
+        }))
+
+    # ── Long-tail: re-use the top-down disaggregation on the same total ──
+    if long_tail:
+        long_tail_df = df[df['name'].isin(long_tail)].copy()
+        if not long_tail_df.empty:
+            tail_predictions = _run_top_down_for_tail(
+                long_tail_df, holidays_df, horizon_days,
+            )
+            if not tail_predictions.empty:
+                rows.append(tail_predictions)
+
+    if not rows:
+        return pd.DataFrame(columns=[
+            'ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period'
+        ])
+
+    pred_df = pd.concat(rows, ignore_index=True)
+
+    # Attach observed values + actual/future labels (same as top_down)
+    observed = (
+        df.groupby(['date', 'time_period', 'name'], as_index=False)['quantity']
+        .sum()
+        .rename(columns={'date': 'ds', 'name': 'product', 'quantity': 'y'})
+    )
+    pred_df = pred_df.merge(observed, on=['ds', 'time_period', 'product'], how='left')
+    pred_df['type'] = pred_df['y'].apply(lambda x: 'actual' if pd.notna(x) else 'future')
+
+    percentage_error = (abs(pred_df['y'] - pred_df['yhat']) / pred_df['y']) * 100
+    percentage_error = percentage_error.replace([np.inf, -np.inf], np.nan)
+    pred_df['percentage_error'] = (
+        percentage_error.round(0).astype('Int64').astype(str) + '%'
+    )
+
+    pred_df = pred_df.drop_duplicates(subset=['ds', 'product', 'time_period'])
+    product_order = product_volume.index.tolist()
+    pred_df['product'] = pd.Categorical(pred_df['product'], categories=product_order, ordered=True)
+    pred_df['time_period'] = pd.Categorical(pred_df['time_period'], categories=TIME_ORDER, ordered=True)
+    pred_df = pred_df.sort_values(by=['product', 'ds', 'time_period'])
+
+    out = pred_df[['ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period']]
+    if save_csv:
+        out.to_csv("all_products_predictions.csv", index=False)
+    return out
+
+
+def _run_top_down_for_tail(
+    df_tail: pd.DataFrame,
+    holidays_df: pd.DataFrame,
+    horizon_days: int,
+) -> pd.DataFrame:
+    """Run the top-down logic but only on a subset of products (the long
+    tail). Reuses the same machinery as run_forecast's top-down path so
+    the output schema is identical and concatenation is clean."""
+    df_tail = df_tail.copy()
+    df_tail['dow'] = df_tail['date'].dt.day_name()
+
+    total_daily = df_tail.groupby('date', as_index=False)['quantity'].sum()
+    total_daily.columns = ['ds', 'y']
+    if total_daily.empty:
+        return pd.DataFrame()
+    all_dates = pd.date_range(total_daily['ds'].min(), total_daily['ds'].max())
+    total_daily = (
+        total_daily.set_index('ds').reindex(all_dates).fillna(0.0)
+        .rename_axis('ds').reset_index()
+    )
+    total_daily['season'] = total_daily['ds'].apply(compute_season)
+    total_daily = _add_season_columns(total_daily)
+
+    model = _build_prophet(holidays_df)
+    try:
+        model.fit(total_daily[['ds', 'y'] + SEASON_COLS])
+    except Exception as e:
+        print(f"  · tail aggregate fit skipped ({type(e).__name__}: {e})")
+        return pd.DataFrame()
+
+    future_dates = pd.date_range(
+        start=total_daily['ds'].min(),
+        end=total_daily['ds'].max() + pd.Timedelta(days=horizon_days),
+    )
+    future = pd.DataFrame({'ds': future_dates})
+    future['season'] = future['ds'].apply(compute_season)
+    future = _add_season_columns(future)
+    forecast = model.predict(future[['ds'] + SEASON_COLS])
+    forecast['yhat'] = forecast['yhat'].clip(lower=0)
+    forecast = forecast[['ds', 'yhat']]
+    forecast['dow'] = forecast['ds'].dt.day_name()
+
+    # Disaggregate same as the main top-down path
+    pivot_num = (
+        df_tail.groupby(['name', 'dow', 'time_period'])['quantity'].sum()
+        .reset_index().rename(columns={'quantity': 'product_qty'})
+    )
+    pivot_den = (
+        df_tail.groupby(['dow', 'time_period'])['quantity'].sum()
+        .reset_index().rename(columns={'quantity': 'total_qty'})
+    )
+    share = pivot_num.merge(pivot_den, on=['dow', 'time_period'])
+    share['fraction'] = np.where(
+        share['total_qty'] > 0, share['product_qty'] / share['total_qty'], 0.0,
+    )
+
+    total_qty = float(df_tail['quantity'].sum()) or 1.0
+    overall_product_share = (
+        df_tail.groupby('name')['quantity'].sum() / total_qty
+    ).reset_index().rename(columns={'quantity': 'overall_product_share'})
+
+    tp_totals = df_tail.groupby('time_period')['quantity'].sum()
+    tp_total_sum = float(tp_totals.sum()) or 1.0
+    overall_tp_share = pd.DataFrame({
+        'time_period': TIME_ORDER,
+        'overall_tp_share': [float(tp_totals.get(tp, 0)) / tp_total_sum for tp in TIME_ORDER],
+    })
+
+    full_grid = forecast[['ds', 'dow', 'yhat']].merge(overall_product_share, how='cross')
+    full_grid = full_grid.merge(overall_tp_share, how='cross')
+    full_grid = full_grid.rename(columns={'name': 'product'})
+    full_grid = full_grid.merge(
+        share[['name', 'dow', 'time_period', 'fraction']].rename(columns={'name': 'product'}),
+        on=['product', 'dow', 'time_period'], how='left',
+    )
+    fallback = full_grid['overall_product_share'] * full_grid['overall_tp_share']
+    full_grid['fraction'] = full_grid['fraction'].fillna(0.0)
+    full_grid['fraction'] = np.where(full_grid['fraction'] > 0, full_grid['fraction'], fallback)
+    full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0).round().astype(int)
+    return full_grid[['ds', 'time_period', 'product', 'yhat_value']].rename(columns={'yhat_value': 'yhat'})
+
+
 def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 30) -> pd.DataFrame:
     """
-    Top-down: fit one Prophet on the daily total, disaggregate to
-    per-product per-time_period using historical share. Returns a
-    DataFrame with the same columns the route layer expects:
+    Returns a DataFrame with columns:
         ds, yhat, y, product, type, percentage_error, time_period
+
+    Behaviour depends on FORECAST_MODE:
+      - "top_down" (default) — one Prophet on the daily total, then
+        disaggregate via historical (product × dow × time_period) share.
+        Fast (~1s on a laptop, 10s on free tier).
+      - "per_product" — one Prophet per top-N product, long tail uses
+        top-down. Slower (~30s on a laptop, minutes on free tier) but
+        captures item-specific Eid/Ramadan peaks that get diluted at
+        the menu-aggregate level.
     """
     np.random.seed(42)
 
@@ -180,6 +467,9 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     df['date'] = pd.to_datetime(df['date'])
     df['season'] = df['date'].apply(compute_season)
     df['dow'] = df['date'].dt.day_name()
+
+    if FORECAST_MODE == "per_product":
+        return _run_per_product(df, save_csv, horizon_days)
 
     # ── Aggregate daily total across the whole menu ──────────────────────
     total_daily = df.groupby('date', as_index=False)['quantity'].sum()
