@@ -97,11 +97,26 @@ _baseline_cache: dict[int, dict[str, float]] = {}       # user_id -> (product ->
 _cache_lock = threading.Lock()
 
 
-# Default forecast horizon when the user hasn't asked for anything specific.
-# Generous enough that demos with 2022 data can forecast ~3 years out without
-# triggering a retrain. Retraining still happens automatically if a request
-# asks for a window beyond this — see _ensure_horizon().
-DEFAULT_HORIZON_DAYS = 1095  # ~3 years
+# Minimum forecast horizon. The actual horizon used is computed
+# dynamically from `data_end` and today's date — see `_default_horizon_days`
+# below. The hard floor of 1095 covers fresh datasets where today is close
+# to data_end; in stale-data demos (e.g. 2022 data viewed in 2026) the
+# dynamic calculation extends well past this so requests for "next 7 days"
+# actually hit the cache instead of triggering a retrain on every click.
+DEFAULT_HORIZON_DAYS = 1095  # ~3 years (floor)
+
+
+def _default_horizon_days(data_end: pd.Timestamp) -> int:
+    """Compute the horizon the cache should cover so any "next N days from
+    today" request lands inside cached predictions. Without this, demos on
+    old data viewed today (e.g. 2022 data in 2026) caused every forecast
+    click to invalidate the cache and trigger a slow full retrain on the
+    free-tier CPU."""
+    today = pd.Timestamp.now().normalize()
+    days_since_data = max(0, int((today - pd.Timestamp(data_end)).days))
+    # Cover up to today + 365 days of forecast in the cache. Adding 30
+    # days of buffer absorbs adjacent requests without cache churn.
+    return max(DEFAULT_HORIZON_DAYS, days_since_data + 365 + 30)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -237,8 +252,11 @@ def _get_predictions(user_id: int, required_horizon_days: int | None = None) -> 
             )
 
         end_date = pd.to_datetime(model_df["date"]).max()
+        # Use the dynamic default that accounts for "today vs data_end".
+        # Without this, stale-data demos invalidate the cache on every
+        # request because DEFAULT_HORIZON_DAYS=1095 doesn't reach today.
         target_horizon = max(
-            DEFAULT_HORIZON_DAYS,
+            _default_horizon_days(end_date),
             (required_horizon_days or 0) + 30,  # small buffer to absorb adjacent requests
         )
         predictions = run_forecast(model_df, save_csv=False, horizon_days=target_horizon)
