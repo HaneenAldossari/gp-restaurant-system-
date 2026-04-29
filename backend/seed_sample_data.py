@@ -231,7 +231,11 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
 
 
 def seed_all_users() -> None:
-    """Seed sample data for every user that doesn't already have data."""
+    """Seed sample data for every user that doesn't already have data.
+    Per-user errors are isolated — one failure does not stop the loop,
+    so a transient timeout / memory pressure on one user's seed leaves
+    the others intact. Failures are logged; on the next backend startup
+    the seed is retried (idempotent)."""
     if not SAMPLE_FILE.exists():
         print(f"Sample file not found at {SAMPLE_FILE}, skipping.")
         return
@@ -239,13 +243,17 @@ def seed_all_users() -> None:
     with engine.connect() as conn:
         users = conn.execute(text("SELECT id, name FROM users ORDER BY id")).fetchall()
     for u in users:
-        result = seed_sample_for_user(u[0])
-        if result:
-            print(f"Seeded sample for [{u[0]}] {u[1]}: "
-                  f"{result['rows']} items / {result['orders']} orders "
-                  f"(skipped {result['skipped']})")
-        else:
-            print(f"Skipped [{u[0]}] {u[1]} — already has data")
+        try:
+            result = seed_sample_for_user(u[0])
+            if result:
+                print(f"Seeded sample for [{u[0]}] {u[1]}: "
+                      f"{result['rows']} items / {result['orders']} orders "
+                      f"(skipped {result['skipped']})")
+            else:
+                print(f"Skipped [{u[0]}] {u[1]} — already has data")
+        except Exception as e:
+            print(f"FAILED to seed [{u[0]}] {u[1]}: {type(e).__name__}: {e}")
+            # continue to next user instead of bubbling up
 
 
 if __name__ == "__main__":
