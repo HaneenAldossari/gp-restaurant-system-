@@ -64,7 +64,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         top-N items (catches item-specific Eid/Ramadan spikes that
 #         get washed out at the aggregate level) + extended Eid windows
 #         with pre-Eid shopping rush + weak yearly seasonality.
-MODEL_VERSION = "v11"
+#   v12 = baseline scaling moved from per-request to one-shot at
+#         training time. Eliminates window-dependent rescaling bug
+#         (same date returning different values across "Next Week" vs
+#         "Next Month").
+MODEL_VERSION = "v12"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -271,6 +275,14 @@ def _get_predictions(user_id: int, required_horizon_days: int | None = None) -> 
             (required_horizon_days or 0) + 30,  # small buffer to absorb adjacent requests
         )
         predictions = run_forecast(model_df, save_csv=False, horizon_days=target_horizon)
+        # One-shot baseline scaling — applied here at training time, not
+        # per-request, so the same date returns the same value regardless
+        # of whether the caller asks for "next 7 days" or "next 30 days".
+        # The previous per-request scaling caused window-dependent values
+        # (different days included → different actual_total → different
+        # scale factor → different per-day output) which surfaced as
+        # contradictory forecasts for the same date across windows.
+        predictions = _bake_baseline_scale(predictions, model_df, end_date)
         _predictions_cache[user_id] = predictions
         _category_lookup[user_id] = cat_map
         _data_end_date[user_id] = end_date
@@ -309,6 +321,65 @@ def _baseline_daily_per_product(user_id: int) -> dict[str, float]:
     result = {name: float(v) / data_days for name, v in sums.items()}
     _baseline_cache[user_id] = result
     return result
+
+
+def _bake_baseline_scale(
+    predictions: pd.DataFrame,
+    model_df: pd.DataFrame,
+    data_end: pd.Timestamp,
+) -> pd.DataFrame:
+    """One-shot global scale applied at training time.
+
+    Computes a SINGLE multiplier = (historical menu daily average) /
+    (predicted-future menu daily average) and multiplies every yhat in
+    the future window by it. This:
+
+      • Preserves Prophet's shape — every relative variation
+        (weekend lift, Eid spikes, payday peaks, mid-month dip) keeps
+        its proportional magnitude.
+      • Restores realistic absolute scale — per-product Prophets on
+        sparse 1-year data systematically under-predict by 2-4×;
+        this snaps the menu total back to the historical average.
+      • Same value for the same date no matter which window the caller
+        slices — fixes the per-request rescaling bug where "Thu Apr 30
+        = 171 in Next Week" but "= 158 in Next Month" for the same
+        forecast.
+    """
+    if predictions.empty:
+        return predictions
+
+    data_days = (
+        max(1, int((model_df["date"].max() - model_df["date"].min()).days) + 1)
+    )
+    historical_menu_per_day = float(model_df["quantity"].sum()) / data_days
+
+    fut = predictions[predictions["ds"] > data_end]
+    if fut.empty or historical_menu_per_day <= 0:
+        return predictions
+
+    daily_totals = fut.groupby("ds")["yhat"].sum()
+    if daily_totals.empty:
+        return predictions
+    predicted_menu_per_day = float(daily_totals.mean())
+    if predicted_menu_per_day <= 0:
+        return predictions
+
+    global_scale = historical_menu_per_day / predicted_menu_per_day
+    # Clamp the global scale so we don't go too aggressive in either
+    # direction. 0.5–5× is plenty to correct typical Prophet under/over
+    # prediction without amplifying random noise.
+    global_scale = max(0.5, min(global_scale, 5.0))
+
+    if abs(global_scale - 1.0) < 0.05:
+        return predictions  # already within ±5% of historical, leave alone
+
+    print(f"[baseline_scale] global={global_scale:.2f} "
+          f"(hist={historical_menu_per_day:.1f}/day, "
+          f"predicted={predicted_menu_per_day:.1f}/day)")
+
+    out = predictions.copy()
+    out["yhat"] = (out["yhat"].astype(float) * global_scale).clip(lower=0).round().astype(int)
+    return out
 
 
 def _apply_baseline_floor(user_id: int, fut: pd.DataFrame, period: int) -> pd.DataFrame:
@@ -524,10 +595,11 @@ def _slice_future(
         fut = fut[fut["ds"] <= cutoff]
 
     fut["yhat"] = fut["yhat"].clip(lower=0)
-    effective_period = period
-    if start_date and end_date_str and not fut.empty:
-        effective_period = max(1, (fut["ds"].max() - fut["ds"].min()).days + 1)
-    return _apply_baseline_floor(user_id, fut, effective_period)
+    # Baseline scaling is now applied ONCE at training time
+    # (`_bake_baseline_scale`) so the cached predictions are pre-scaled.
+    # Slicing returns those values directly — no per-request rescaling,
+    # no window-dependent contradictions for the same date.
+    return fut
 
 
 def _persist_run(user_id: int, predictions: pd.DataFrame) -> None:
