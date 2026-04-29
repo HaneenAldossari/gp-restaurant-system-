@@ -50,7 +50,7 @@ from sklearn.metrics import mean_absolute_error
 #                   that are washed out at the aggregate level.
 #                   Recommended on localhost where speed isn't a
 #                   constraint and you need accurate per-item peaks.
-FORECAST_MODE = os.getenv("FORECAST_MODE", "top_down").lower()
+FORECAST_MODE = os.getenv("FORECAST_MODE", "per_product").lower()
 # Cap on how many products get their own Prophet in per_product mode.
 # The long tail (sparse, low-volume items) falls back to top-down
 # disaggregation so we don't waste minutes fitting models for items
@@ -209,11 +209,12 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
 def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = True) -> Prophet:
     """Tuned Prophet config for Saudi cafe data.
 
-    yearly_seasonality is on by default with a weak prior — it helps when
-    the forecast extends past a year-end boundary (e.g. December retail
-    bumps) but is regularised down so it doesn't overfit on a single year
-    of training data. Set with_yearly=False for very short windows where
-    the yearly cycle is mathematically un-fittable."""
+    yearly_seasonality is ON: without it, Prophet's trend extrapolates
+    far above the training mean when the forecast window sits years
+    past data_end (we observed predictions blowing up to ~10× the
+    historical baseline on 2022 data viewed in 2026). The yearly
+    component anchors predictions on what the same time-of-year looked
+    like in the training data."""
     m = Prophet(
         daily_seasonality=False,
         weekly_seasonality=False,  # added manually below for stronger weight
@@ -223,7 +224,7 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = True) -> Proph
         holidays_prior_scale=100.0,
         changepoint_prior_scale=0.01,
     )
-    m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=50.0)
+    m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)
     for col in SEASON_COLS:
         m.add_regressor(col)
     return m
@@ -266,7 +267,7 @@ def _train_one_product(
         for tp in TIME_ORDER
     }
 
-    model = _build_prophet(holidays_df, with_yearly=len(daily) >= 200)
+    model = _build_prophet(holidays_df)
     model.fit(daily[['ds', 'y'] + SEASON_COLS])
 
     future_dates = pd.date_range(
