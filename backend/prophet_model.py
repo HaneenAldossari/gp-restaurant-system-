@@ -235,9 +235,18 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
             rows.append({"holiday": "saudi_national_day", "ds": cur,
                          "lower_window": -1, "upper_window": 1})
 
+        # Payday split into two phases — same reasoning as Eid:
+        # the late window (days 27-31) shows +25% lift in the data
+        # while the early window (days 1-5) shows +50%. A single
+        # window anchored on day 27 averaged these into a uniform
+        # +35% that under-predicted day 1-5 peaks AND over-predicted
+        # day 27-31. Two coefficients lets each phase calibrate.
         if cur.day == 27:
-            rows.append({"holiday": "payday_week", "ds": cur,
-                         "lower_window": 0, "upper_window": 9})
+            rows.append({"holiday": "payday_late", "ds": cur,
+                         "lower_window": 0, "upper_window": 4})
+        if cur.day == 1:
+            rows.append({"holiday": "payday_early", "ds": cur,
+                         "lower_window": 0, "upper_window": 4})
 
         cur += pd.Timedelta(days=1)
 
@@ -269,7 +278,13 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
         yearly_seasonality=with_yearly,
         holidays=holidays_df if not holidays_df.empty else None,
         seasonality_prior_scale=25.0,
-        holidays_prior_scale=100.0,
+        # Cranked to 250 (was 100). With 8+ holiday families (Ramadan,
+        # Eid pre/day/post × 2, payday early/late, National Day) all
+        # competing for variance allocation against weekly seasonality,
+        # 100 was still over-shrinking the post-payday coefficients.
+        # 250 lets Prophet allocate the +50% post-payday lift the data
+        # shows without averaging it down with the weaker late-payday.
+        holidays_prior_scale=250.0,
         changepoint_prior_scale=0.01,
     )
     m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)

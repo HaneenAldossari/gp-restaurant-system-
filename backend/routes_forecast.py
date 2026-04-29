@@ -80,7 +80,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 #   v15 = keep yhat as float through the cache. Per-cell int rounding
 #         was zeroing out the long tail (a 19-units-a-year item floors
 #         to 0 in every cell, summing to 0 for the entire window).
-MODEL_VERSION = "v15"
+#   v16 = split payday_week into payday_late (days 27-31) and
+#         payday_early (days 1-5). Single window averaged a strong
+#         +50% early-month lift with a modest +25% late-month lift
+#         into a flat +35%, hiding the post-payday spending spike.
+MODEL_VERSION = "v16"
 
 
 def _cache_file(user_id: int) -> Path:
