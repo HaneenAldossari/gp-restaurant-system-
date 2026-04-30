@@ -84,7 +84,12 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         payday_early (days 1-5). Single window averaged a strong
 #         +50% early-month lift with a modest +25% late-month lift
 #         into a flat +35%, hiding the post-payday spending spike.
-MODEL_VERSION = "v16"
+#   v17 = Eid 4-phase (pre/day1/bounce/post) — verified against the
+#         user's 2022 data showing Eid Al Adha day 1 was DEPRESSED
+#         (-50%) while day 2 was the PEAK (+88% over avg). Single
+#         day-coefficient was averaging both. Plus added Saudi
+#         Founding Day (Feb 22) which was missing entirely.
+MODEL_VERSION = "v17"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -118,6 +123,7 @@ _data_end_date: dict[int, pd.Timestamp] = {}            # user_id -> last actual
 _horizon_cache: dict[int, int] = {}                     # user_id -> days of cached future
 _price_cache: dict[int, dict[str, tuple[float, float]]] = {}  # user_id -> (product -> (unit_price, unit_cost))
 _baseline_cache: dict[int, dict[str, float]] = {}       # user_id -> (product -> historical units/day)
+_seasonal_cache: dict[int, dict[str, dict]] = {}        # user_id -> (product -> seasonality profile)
 _cache_lock = threading.Lock()
 
 
@@ -299,6 +305,11 @@ def _get_predictions(user_id: int, required_horizon_days: int | None = None) -> 
         # scale factor → different per-day output) which surfaced as
         # contradictory forecasts for the same date across windows.
         predictions = _bake_baseline_scale(predictions, model_df, end_date)
+        # Holiday calibration AFTER baseline scaling — corrects
+        # Prophet's chronic under-fit on rare-event holidays
+        # (one-Eid-per-year-of-data is too sparse for the prior to
+        # learn the full lift).
+        predictions = _calibrate_holidays(predictions, model_df, end_date)
         _predictions_cache[user_id] = predictions
         _category_lookup[user_id] = cat_map
         _data_end_date[user_id] = end_date
@@ -680,6 +691,179 @@ def _data_end_for(user_id: int) -> pd.Timestamp | None:
     return pd.Timestamp(row[0]).normalize() if row and row[0] else None
 
 
+def _calibrate_holidays(
+    predictions: pd.DataFrame,
+    model_df: pd.DataFrame,
+    data_end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Post-fit calibration: bring under-fit holiday days up to their
+    historical observed lift.
+
+    Why this exists: Prophet's MAP estimation with only ONE occurrence
+    of each major holiday (one Eid al-Adha, one National Day, etc. in
+    a single year of training data) is structurally conservative — it
+    won't fit a +42% lift coefficient confidently from a single sample,
+    no matter how loose the prior is. The user's spreadsheet showed
+    Eid al-Adha had +42% revenue lift while the model captured only
+    +7-10%. We close the gap by scaling each labeled holiday's future
+    predictions to match the same per-day average the historical data
+    showed for that holiday.
+
+    Conservative: only scales UP (never down) and only when the
+    historical lift is meaningfully larger than the fitted lift.
+    Capped at 3× so a single noisy historical day doesn't blow up
+    the future forecast."""
+    if predictions.empty:
+        return predictions
+
+    # Lazy import to avoid circular at module load
+    from prophet_model import compute_occasion
+
+    work = model_df.copy()
+    work["occasion"] = work["date"].apply(compute_occasion)
+    hist_daily = work.groupby(["date", "occasion"], as_index=False)["quantity"].sum()
+    hist_per_occasion = hist_daily.groupby("occasion")["quantity"].mean().to_dict()
+
+    out = predictions.copy()
+    out["__occ"] = out["ds"].apply(compute_occasion)
+
+    fut_mask = out["ds"] > data_end
+    fut = out[fut_mask]
+    if fut.empty:
+        out = out.drop(columns=["__occ"])
+        return out
+
+    # Calibrate each meaningful holiday family. Per-event scaling
+    # (not pooled across years) — we identify each contiguous block
+    # of one occasion type in the future and scale that block's avg
+    # toward the historical avg. Pooling across multiple future years
+    # of Eid would let one year's low prediction yank up another
+    # year's already-fine prediction.
+    CALIBRATE_OCCASIONS = (
+        "Ramadan", "Eid al-Fitr", "Eid al-Adha",
+        "Saudi National Day", "Saudi Founding Day",
+    )
+    for occ in CALIBRATE_OCCASIONS:
+        target = hist_per_occasion.get(occ)
+        if not target:
+            continue
+        occ_dates = sorted(fut[fut["__occ"] == occ]["ds"].unique())
+        if not occ_dates:
+            continue
+
+        # Group consecutive occ days into events (each event is one
+        # year's Eid / one National Day, etc.) and scale each event
+        # independently.
+        events: list[list] = []
+        for d in occ_dates:
+            d = pd.Timestamp(d)
+            if events and (d - pd.Timestamp(events[-1][-1])).days <= 1:
+                events[-1].append(d)
+            else:
+                events.append([d])
+
+        for event_dates in events:
+            event_mask = fut_mask & out["ds"].isin(event_dates)
+            event_per_day = (
+                out[event_mask].groupby("ds")["yhat"].sum().mean()
+            )
+            if event_per_day <= 0:
+                continue
+            if target <= event_per_day * 1.10:
+                continue  # already within 10%, leave it
+            scale = min(target / event_per_day, 2.0)  # tight cap
+            out.loc[event_mask, "yhat"] = out.loc[event_mask, "yhat"] * scale
+            print(f"[calibrate] {occ} {event_dates[0].date()}–{event_dates[-1].date()}: "
+                  f"pred {event_per_day:.0f} → target {target:.0f} → scale {scale:.2f}")
+
+    out = out.drop(columns=["__occ"])
+    return out
+
+
+def _seasonality_profile(user_id: int) -> dict[str, dict]:
+    """For each product, summarise its historical seasonal concentration.
+
+    Returns {product_name: {isSeasonal, peakSeasons, concentrationPct, label}}.
+    A product is flagged seasonal when ≥70% of its sales fall in 1-2
+    seasons. Caches the result in `_seasonal_cache` so the heavy
+    groupby happens once per user."""
+    cached = _seasonal_cache.get(user_id)
+    if cached is not None:
+        return cached
+
+    df = load_data(user_id)
+    if df.empty:
+        _seasonal_cache[user_id] = {}
+        return {}
+
+    def _season_of(month: int) -> str:
+        if month in (12, 1, 2):  return "Winter"
+        if month in (3, 4, 5):   return "Spring"
+        if month in (6, 7, 8):   return "Summer"
+        return "Autumn"
+
+    work = df[["Product", "Order Date", "Quantity"]].copy()
+    work["season"] = work["Order Date"].dt.month.apply(_season_of)
+    by_product_season = (
+        work.groupby(["Product", "season"])["Quantity"].sum().reset_index()
+    )
+    totals = work.groupby("Product")["Quantity"].sum()
+
+    out: dict[str, dict] = {}
+    for product, total in totals.items():
+        if total <= 0:
+            continue
+        seasons = by_product_season[by_product_season["Product"] == product]
+        # Sort by qty descending; pick top 1, then check if top 2 covers
+        # 70% — if yes and they're "adjacent" seasons (e.g. Autumn-Winter),
+        # treat as a 2-season concentration.
+        seasons = seasons.sort_values("Quantity", ascending=False)
+        if seasons.empty:
+            continue
+        top1_pct = seasons.iloc[0]["Quantity"] / total * 100
+        top2_pct = (
+            seasons.iloc[:2]["Quantity"].sum() / total * 100
+            if len(seasons) >= 2 else top1_pct
+        )
+
+        adjacent = {
+            ("Winter", "Autumn"), ("Autumn", "Winter"),
+            ("Winter", "Spring"), ("Spring", "Winter"),
+            ("Spring", "Summer"), ("Summer", "Spring"),
+            ("Summer", "Autumn"), ("Autumn", "Summer"),
+        }
+
+        is_seasonal = False
+        peak_seasons: list[str] = []
+        concentration = 0.0
+
+        if top1_pct >= 70:
+            is_seasonal = True
+            peak_seasons = [seasons.iloc[0]["season"]]
+            concentration = top1_pct
+        elif len(seasons) >= 2:
+            s1 = seasons.iloc[0]["season"]
+            s2 = seasons.iloc[1]["season"]
+            if top2_pct >= 70 and (s1, s2) in adjacent:
+                is_seasonal = True
+                # Order seasons in calendar sense (Spring < Summer etc.)
+                order = ["Winter", "Spring", "Summer", "Autumn"]
+                peak_seasons = sorted([s1, s2], key=order.index)
+                concentration = top2_pct
+
+        if is_seasonal:
+            label = "–".join(peak_seasons)  # e.g. "Autumn–Winter"
+            out[str(product)] = {
+                "isSeasonal": True,
+                "peakSeasons": peak_seasons,
+                "concentrationPct": round(concentration, 1),
+                "label": label,
+            }
+
+    _seasonal_cache[user_id] = out
+    return out
+
+
 def _required_horizon_for(
     user_id: int,
     period: int,
@@ -727,6 +911,7 @@ def invalidate_cache(user_id: int | None = None) -> None:
             _horizon_cache.clear()
             _price_cache.clear()
             _baseline_cache.clear()
+            _seasonal_cache.clear()
             try:
                 for p in CACHE_DIR.glob("predictions_user_*.pkl"):
                     p.unlink(missing_ok=True)
@@ -739,6 +924,7 @@ def invalidate_cache(user_id: int | None = None) -> None:
             _horizon_cache.pop(user_id, None)
             _price_cache.pop(user_id, None)
             _baseline_cache.pop(user_id, None)
+            _seasonal_cache.pop(user_id, None)
             try:
                 _cache_file(user_id).unlink(missing_ok=True)
             except Exception:
@@ -872,6 +1058,16 @@ def forecast_item(
         ])(_daily_revenue(user_id, future)),
         "timeOfDayAvailable": time_of_day_available,
         "timePeriodBreakdown": _serialize_rows(future, only_future=False) if time_of_day_available else [],
+        # Pre-aggregated per-time-period totals across the whole window.
+        # Computed from float yhats and then rounded so low-volume items
+        # still show ≥1 in the time buckets where they actually sell —
+        # avoids the "all four buckets show 0 even though daily total is
+        # 7" display bug that comes from int-flooring per-cell yhats
+        # before summing.
+        "timePeriodTotals": (lambda f: [
+            {"time_period": tp, "predicted_quantity": int(round(max(0.0, f[f["time_period"] == tp]["yhat"].sum())))}
+            for tp in ["morning", "Afternoon", "Evening", "night"]
+        ])(future) if time_of_day_available else [],
         "regressorsUsed": regressors,
         "notableEvents": events,
         "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
@@ -996,26 +1192,24 @@ def forecast_total(
     )
     per_item["category"] = per_item["product"].map(_category_lookup.get(user_id, {}))
 
-    top_items = [
-        {
-            "name": r["product"],
-            "category": r["category"] or "—",
-            "totalPredictedQuantity": int(r["totalPredictedQuantity"]),
+    seasonality = _seasonality_profile(user_id)
+
+    def _enrich(row) -> dict:
+        name = row["product"]
+        seasonal = seasonality.get(name)
+        return {
+            "name": name,
+            "category": row["category"] or "—",
+            "totalPredictedQuantity": int(row["totalPredictedQuantity"]),
+            "seasonal": seasonal,  # None or {isSeasonal, peakSeasons, label, ...}
         }
-        for _, r in per_item.head(5).iterrows()
-    ]
+
+    top_items = [_enrich(r) for _, r in per_item.head(5).iterrows()]
     # Bottom 5 — "worst sellers" worth watching. Filter on the integer
     # display value (>=1 unit) so we don't surface items that round to 0
     # and look like a display bug.
     bottom_candidates = per_item[per_item["totalPredictedQuantity"] >= 1.0]
-    bottom_items = [
-        {
-            "name": r["product"],
-            "category": r["category"] or "—",
-            "totalPredictedQuantity": int(r["totalPredictedQuantity"]),
-        }
-        for _, r in bottom_candidates.tail(5).iloc[::-1].iterrows()
-    ]
+    bottom_items = [_enrich(r) for _, r in bottom_candidates.tail(5).iloc[::-1].iterrows()]
 
     daily_totals = (
         future.groupby(future["ds"].astype(str))["yhat"]

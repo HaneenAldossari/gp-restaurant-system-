@@ -104,6 +104,8 @@ def compute_occasion(d) -> str:
         pass
     if ts.month == 9 and ts.day == 23:
         return "Saudi National Day"
+    if ts.month == 2 and ts.day == 22:
+        return "Saudi Founding Day"
     if ts.day == 27:
         return "Payday"
     if is_payday(ts):
@@ -200,31 +202,43 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
             if h.month == 10 and h.day == 1:
                 key = ("eid_fitr", cur.date().isoformat())
                 if key not in seen:
-                    # 3-phase split so pre / during / post each get
-                    # their own learnable coefficient. Prophet requires
-                    # lower_window <= 0 <= upper_window, so each phase
-                    # is anchored on a different date relative to Eid:
-                    #   pre  : 3 days before, spanning -3..-1
-                    #   day  : on Eid 1, spanning 0..+2
-                    #   post : 3 days after, spanning 0..+2
+                    # 4-phase split. Eid day 1 itself is depressed
+                    # (people at home), so it gets its own anchor
+                    # separate from the post-Eid bounce (days 2-4)
+                    # which is the actual peak in real Saudi data.
+                    #   pre   : 3 days before, anchor -3, spans -3..-1
+                    #   day1  : Eid day 1 only, mostly suppressed
+                    #   bounce: days 2-4, anchor +1, the spike
+                    #   post  : days 5-6, anchor +5, tail
                     pre_anchor = cur - pd.Timedelta(days=3)
-                    post_anchor = cur + pd.Timedelta(days=3)
+                    bounce_anchor = cur + pd.Timedelta(days=1)
+                    post_anchor = cur + pd.Timedelta(days=5)
                     rows.append({"holiday": "eid_fitr_pre", "ds": pre_anchor,
                                  "lower_window": 0, "upper_window": 2})
-                    rows.append({"holiday": "eid_fitr_day", "ds": cur,
+                    rows.append({"holiday": "eid_fitr_day1", "ds": cur,
+                                 "lower_window": 0, "upper_window": 0})
+                    rows.append({"holiday": "eid_fitr_bounce", "ds": bounce_anchor,
                                  "lower_window": 0, "upper_window": 2})
                     rows.append({"holiday": "eid_fitr_post", "ds": post_anchor,
-                                 "lower_window": 0, "upper_window": 2})
+                                 "lower_window": 0, "upper_window": 1})
                     seen.add(key)
             if h.month == 12 and h.day == 10:
                 key = ("eid_adha", cur.date().isoformat())
                 if key not in seen:
+                    # Same 4-phase split. Verified against the user's
+                    # 2022 data: Eid Al Adha day 1 (Sat Jul 9) = 158
+                    # orders (LOW), day 2 (Sun Jul 10) = 328 (PEAK
+                    # +88% over avg), days 3-4 = 252-244 (still
+                    # elevated), day 5+ = back to baseline.
                     pre_anchor = cur - pd.Timedelta(days=3)
-                    post_anchor = cur + pd.Timedelta(days=4)
+                    bounce_anchor = cur + pd.Timedelta(days=1)
+                    post_anchor = cur + pd.Timedelta(days=5)
                     rows.append({"holiday": "eid_adha_pre", "ds": pre_anchor,
                                  "lower_window": 0, "upper_window": 2})
-                    rows.append({"holiday": "eid_adha_day", "ds": cur,
-                                 "lower_window": 0, "upper_window": 3})
+                    rows.append({"holiday": "eid_adha_day1", "ds": cur,
+                                 "lower_window": 0, "upper_window": 0})
+                    rows.append({"holiday": "eid_adha_bounce", "ds": bounce_anchor,
+                                 "lower_window": 0, "upper_window": 2})
                     rows.append({"holiday": "eid_adha_post", "ds": post_anchor,
                                  "lower_window": 0, "upper_window": 2})
                     seen.add(key)
@@ -233,6 +247,14 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
 
         if cur.month == 9 and cur.day == 23:
             rows.append({"holiday": "saudi_national_day", "ds": cur,
+                         "lower_window": -1, "upper_window": 1})
+
+        # Saudi Founding Day — Feb 22, established 2022. Treat the same
+        # as National Day with a 3-day window (1 day before + day + 1
+        # after) since restaurants and cafes typically see elevated
+        # traffic from the long weekend and cultural events.
+        if cur.month == 2 and cur.day == 22:
+            rows.append({"holiday": "saudi_founding_day", "ds": cur,
                          "lower_window": -1, "upper_window": 1})
 
         # Payday split into two phases — same reasoning as Eid:
@@ -278,13 +300,14 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
         yearly_seasonality=with_yearly,
         holidays=holidays_df if not holidays_df.empty else None,
         seasonality_prior_scale=25.0,
-        # Cranked to 250 (was 100). With 8+ holiday families (Ramadan,
-        # Eid pre/day/post × 2, payday early/late, National Day) all
-        # competing for variance allocation against weekly seasonality,
-        # 100 was still over-shrinking the post-payday coefficients.
-        # 250 lets Prophet allocate the +50% post-payday lift the data
-        # shows without averaging it down with the weaker late-payday.
-        holidays_prior_scale=250.0,
+        # 500 (was 250). User's spreadsheet analysis showed Eid al-Adha
+        # 2022 had +42% revenue lift vs rest of year, but the model at
+        # prior=250 was only fitting +7% of that. With one occurrence
+        # of each Eid in the training data Prophet's MAP fit is shy
+        # about large coefficients — loosening the regularization
+        # further lets the rare-event holidays speak. Validated against
+        # the user's day-by-day Eid pattern (158 / 328 / 252 / 244 orders).
+        holidays_prior_scale=500.0,
         changepoint_prior_scale=0.01,
     )
     m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)

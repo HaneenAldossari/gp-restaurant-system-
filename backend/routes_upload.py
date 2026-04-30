@@ -116,6 +116,8 @@ def _compute_occasion(dt) -> str:
 
     if d.month == 9 and d.day == 23:
         return "Saudi National Day"
+    if d.month == 2 and d.day == 22:
+        return "Saudi Founding Day"
 
     # Saudi payday window — salaries land on the 27th of each Gregorian
     # month; the post-payday spending spike runs through about day 5 of
