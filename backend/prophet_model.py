@@ -332,14 +332,11 @@ def _train_one_product(
     if daily.empty:
         return pd.DataFrame(columns=['ds', 'yhat']), {tp: 0.25 for tp in TIME_ORDER}
 
-    all_dates = pd.date_range(daily['ds'].min(), daily['ds'].max())
-    daily = (
-        daily.set_index('ds')
-        .reindex(all_dates)
-        .fillna(0.0)
-        .rename_axis('ds')
-        .reset_index()
-    )
+    # Train only on days with actual sales — store-closure days
+    # (zero rows) shouldn't be filled with 0s and fed to Prophet
+    # because the model would learn "this date type = no demand"
+    # rather than "no signal". Prophet handles non-continuous
+    # date series natively (the trend interpolates).
     daily['season'] = daily['ds'].apply(compute_season)
     daily = _attach_regressors(daily)
 
@@ -467,11 +464,7 @@ def _run_top_down_for_tail(
     total_daily.columns = ['ds', 'y']
     if total_daily.empty:
         return pd.DataFrame()
-    all_dates = pd.date_range(total_daily['ds'].min(), total_daily['ds'].max())
-    total_daily = (
-        total_daily.set_index('ds').reindex(all_dates).fillna(0.0)
-        .rename_axis('ds').reset_index()
-    )
+    # Skip closure days (no fillna) — see _train_one_product comment.
     total_daily['season'] = total_daily['ds'].apply(compute_season)
     total_daily = _attach_regressors(total_daily)
 
@@ -566,14 +559,10 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
             'ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period'
         ])
 
-    all_dates = pd.date_range(total_daily['ds'].min(), total_daily['ds'].max())
-    total_daily = (
-        total_daily.set_index('ds')
-        .reindex(all_dates)
-        .fillna(0.0)
-        .rename_axis('ds')
-        .reset_index()
-    )
+    # Skip closure days from training (no fillna) — store-closure
+    # zeros would teach Prophet that this date-type has no demand,
+    # suppressing future Eid al-Fitr (etc.) forecasts to zero. See
+    # _train_one_product comment for details.
     total_daily['season'] = total_daily['ds'].apply(compute_season)
     total_daily = _attach_regressors(total_daily)
 

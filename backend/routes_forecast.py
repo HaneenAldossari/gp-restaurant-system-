@@ -89,7 +89,14 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         (-50%) while day 2 was the PEAK (+88% over avg). Single
 #         day-coefficient was averaging both. Plus added Saudi
 #         Founding Day (Feb 22) which was missing entirely.
-MODEL_VERSION = "v17"
+#   v18 = drop store-closure days (zero-revenue) from training
+#         instead of feeding 0s to Prophet. With 84/361 closure
+#         days in the dataset (Eid Al Fitr week, summer break,
+#         Sept-Nov gap) Prophet was learning "Eid al-Fitr = no
+#         demand" and suppressing every future Eid al-Fitr to zero.
+#         Closures now treated as missing data; calibration target
+#         excludes them too.
+MODEL_VERSION = "v18"
 
 
 def _cache_file(user_id: int) -> Path:
@@ -722,7 +729,17 @@ def _calibrate_holidays(
     work = model_df.copy()
     work["occasion"] = work["date"].apply(compute_occasion)
     hist_daily = work.groupby(["date", "occasion"], as_index=False)["quantity"].sum()
-    hist_per_occasion = hist_daily.groupby("occasion")["quantity"].mean().to_dict()
+    # Exclude store-closure days (qty == 0) from the historical avg.
+    # In our 2022 dataset Eid al-Fitr coincided with a multi-day
+    # closure — leaving those zeros in would target a near-zero
+    # predicted value, which would then suppress every future
+    # Eid al-Fitr to zero. We treat closures as missing data
+    # (the manager may or may not close again), so the calibration
+    # target reflects what an OPEN Eid al-Fitr looked like in the
+    # data. Holidays with no open historical days at all simply
+    # skip calibration (Prophet's coefficient is whatever it is).
+    hist_open_only = hist_daily[hist_daily["quantity"] > 0]
+    hist_per_occasion = hist_open_only.groupby("occasion")["quantity"].mean().to_dict()
 
     out = predictions.copy()
     out["__occ"] = out["ds"].apply(compute_occasion)
