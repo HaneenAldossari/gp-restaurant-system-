@@ -138,12 +138,10 @@ API docs auto-generated at `http://localhost:8000/docs`.
 
 ## Team
 
-| Member | Role |
-|--------|------|
-| Arwa Alyami | Data ingestion, upload pipeline |
-| **Haneen Aldossari** | Frontend (analytics UI), forecasting integration, auth |
-| Noura Aldossari | Prophet / LSTM modelling |
-| Norah Aljuwayr | Database & PostgreSQL schema |
+- Arwa Alyami
+- Haneen Aldossari
+- Noura Aldossari
+- Norah Aljuwayr
 
 **Supervisor:** Dr. Mubarak Albathan
 **Institution:** Prince Sattam Bin Abdulaziz University, College of Computer Engineering and Sciences, BSc Computer Science.
