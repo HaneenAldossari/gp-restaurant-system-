@@ -26,8 +26,8 @@ This project rebuilds the forecast around the **real local pattern**, then surfa
 - **Outlier filter + per-weekday p25 floor** stop early-close days from contaminating weekly seasonality and prevent the forecast from collapsing on far-future or sparse-data dates.
 
 **Menu Insights (Boston Matrix)**
-- Every item classified as **Hero / Tight-margin / Hidden gem / Underperformer** based on popularity vs profit margin, with a What-If simulator for live price/cost changes.
-- **Direction-aware suggestions:** *raise / lower / hold*, with explicit classification transition pills ("Moves Tight-margin → Hero"), elasticity-projected demand, and a cost-cut bonus when supplier renegotiation compounds with the price change.
+- Every item classified as **Star / Plowhorse / Puzzle / Dog** based on popularity vs profit margin, with a What-If simulator for live price/cost changes.
+- **Direction-aware suggestions:** *raise / lower / hold*, with explicit classification transition pills ("Moves Plowhorse → Star"), elasticity-projected demand, and a cost-cut bonus when supplier renegotiation compounds with the price change.
 - "Not recommended" warnings when the user moves the slider against the model's strategy.
 
 **Manager-focused dashboard**
