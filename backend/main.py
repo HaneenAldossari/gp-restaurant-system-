@@ -68,40 +68,12 @@ def _ensure_schema_and_seed() -> None:
             _seed_samples()
         except Exception as e:
             log.warning("Skipping sample-data seed: %s", e)
-        # Pre-warm the forecast cache for every workspace that has data,
-        # in a BACKGROUND thread so the app's HTTP server starts
-        # immediately. Earlier this ran synchronously and Render's
-        # startup blocked for 4-5 minutes (5 users × ~50s of Prophet
-        # training each), failing health checks and breaking login for
-        # everyone during the deploy window.
-        #
-        # With a daemon thread the API serves requests from the moment
-        # uvicorn binds the port; pre-warming proceeds in parallel and
-        # each user's cache becomes available as its training completes.
-        # `_get_predictions` is internally locked, so a real user
-        # request and the pre-warm can't double-train the same workspace.
-        try:
-            import threading
-            def _bg_prewarm():
-                try:
-                    from sqlalchemy import text as _text
-                    from routes_forecast import _get_predictions  # noqa: WPS437
-                    with engine.connect() as conn:
-                        user_ids = [r[0] for r in conn.execute(_text(
-                            "SELECT id FROM users WHERE role IN ('admin','manager') ORDER BY id"
-                        )).fetchall()]
-                    for uid in user_ids:
-                        try:
-                            _get_predictions(int(uid))
-                            log.info("Pre-warmed forecast cache for user_id=%s", uid)
-                        except Exception as e:
-                            log.info("No forecast pre-warm for user_id=%s: %s", uid, e)
-                except Exception as e:
-                    log.warning("Background pre-warm failed: %s", e)
-            threading.Thread(target=_bg_prewarm, daemon=True, name="forecast-prewarm").start()
-            log.info("Forecast pre-warm started in background")
-        except Exception as e:
-            log.warning("Skipping forecast pre-warm: %s", e)
+        # NOTE: We previously pre-warmed Prophet caches at startup, but
+        # each training takes ~250MB and Render free tier only has 512MB
+        # total — multi-user pre-warm OOM-killed the worker repeatedly.
+        # Caches are now built lazily on first request per user. The
+        # frontend handles the ~50s first-call latency with a longer
+        # timeout and a friendly "this can take up to a minute" message.
     except Exception as e:
         # Don't crash the app if seeding fails — health endpoint still works
         log.error("Schema/seed bootstrap failed: %s", e)
