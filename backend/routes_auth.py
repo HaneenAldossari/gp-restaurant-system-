@@ -64,6 +64,30 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_token(user_id=row[0], role=row[4], parent_id=row[5])
+
+    # Auto-seed the sample dataset for the user's workspace if it's empty.
+    # Runs in a background daemon thread so login responds immediately;
+    # the seed itself takes ~10-20s and is idempotent (no-op if data
+    # already exists). Sub-users inherit the parent's workspace, so
+    # we seed against parent_id when present.
+    #
+    # Effect: a teammate clears all data → logs back in → the dataset
+    # automatically reappears in their Upload History as
+    # "orders_2022.xlsx (auto-loaded)" and the dashboard re-populates,
+    # without anyone having to manually re-upload.
+    workspace_id = int(row[5]) if row[5] else int(row[0])
+    try:
+        import threading
+        from seed_sample_data import seed_sample_for_user
+        threading.Thread(
+            target=lambda: seed_sample_for_user(workspace_id),
+            daemon=True,
+            name=f"login-seed-uid{workspace_id}",
+        ).start()
+    except Exception:
+        # Never let a seed-trigger failure break login
+        pass
+
     return {
         "access_token": token,
         "token_type": "bearer",

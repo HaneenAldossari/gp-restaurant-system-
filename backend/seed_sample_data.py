@@ -18,6 +18,7 @@ behaves identically to a real upload.
 from __future__ import annotations
 
 import io
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +28,21 @@ from db import get_engine
 
 SAMPLE_FILE = Path(__file__).parent / "sample_data" / "orders_2022.xlsx"
 SAMPLE_FILENAME_LABEL = "orders_2022.xlsx (auto-loaded)"
+
+# Per-user lock so concurrent seed calls (e.g. two near-simultaneous
+# logins or a startup-seed racing with a login-seed) don't both run
+# the inserts and produce duplicate order_items. The first caller
+# acquires the lock and seeds; subsequent callers no-op until the
+# first finishes, by which point the user already has data.
+_seed_locks: dict[int, threading.Lock] = {}
+_seed_lock_factory_lock = threading.Lock()
+
+
+def _get_seed_lock(user_id: int) -> threading.Lock:
+    with _seed_lock_factory_lock:
+        if user_id not in _seed_locks:
+            _seed_locks[user_id] = threading.Lock()
+        return _seed_locks[user_id]
 
 
 def _normalize_dataframe(df: pd.DataFrame, user_id: int) -> tuple[pd.DataFrame, int, int]:
@@ -111,123 +127,156 @@ def _normalize_dataframe(df: pd.DataFrame, user_id: int) -> tuple[pd.DataFrame, 
 
 def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
     """Insert the bundled sample dataset for `user_id`. No-op if they
-    already have uploads (unless force=True). Returns a summary dict."""
+    already have ACTUAL data (uploads with linked order_items), unless
+    force=True. Cleans up any orphan upload rows (entries with no
+    linked orders — left behind by a previous failed import) before
+    seeding so the Upload History card stays clean.
+
+    Concurrency-safe via a per-user lock — two near-simultaneous calls
+    won't both run the inserts and double up the data."""
     if not SAMPLE_FILE.exists():
         return None
 
-    engine = get_engine()
-    with engine.begin() as conn:
-        if not force:
-            has_data = conn.execute(
-                text("SELECT 1 FROM uploads WHERE user_id = :uid LIMIT 1"),
-                {"uid": user_id},
+    lock = _get_seed_lock(user_id)
+    if not lock.acquire(blocking=False):
+        # Another thread is already seeding this user — let it finish
+        # rather than racing it. The other thread's transaction will
+        # commit before any subsequent caller sees the result.
+        return None
+
+    try:
+        engine = get_engine()
+        with engine.begin() as conn:
+            # Drop orphan upload rows: a row in `uploads` whose
+            # corresponding orders / order_items never landed (failed
+            # mid-insert in the past). They show up in Upload History
+            # as "0 line items / —" and confuse users.
+            conn.execute(text("""
+                DELETE FROM uploads
+                WHERE user_id = :uid
+                  AND id NOT IN (SELECT DISTINCT upload_id FROM orders WHERE upload_id IS NOT NULL)
+            """), {"uid": user_id})
+
+            if not force:
+                # The right "already has data" check is on order_items,
+                # not on uploads — an upload row with zero items is the
+                # bug we just cleaned, so we should still seed in that
+                # case.
+                has_data = conn.execute(text("""
+                    SELECT 1 FROM order_items oi
+                    JOIN orders o ON oi.order_id = o.id
+                    JOIN uploads u ON o.upload_id = u.id
+                    WHERE u.user_id = :uid
+                    LIMIT 1
+                """), {"uid": user_id}).scalar()
+                if has_data:
+                    return None
+
+            df_raw = pd.read_excel(SAMPLE_FILE, engine="openpyxl")
+            norm, to_import, skipped = _normalize_dataframe(df_raw, user_id)
+
+            # 1. Categories
+            cats = norm[["categ_AR", "categ_EN"]].drop_duplicates()
+            if not cats.empty:
+                conn.execute(
+                    text("""
+                        INSERT INTO categories (name_ar, name_en) VALUES (:ar, :en)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    [{"ar": r["categ_AR"], "en": r["categ_EN"]} for _, r in cats.iterrows()],
+                )
+            cat_map = dict(conn.execute(text("SELECT name_en, id FROM categories")).all())
+
+            # 2. Products
+            prods = norm[["sku", "name_ar", "name_en", "categ_EN"]].drop_duplicates()
+            if not prods.empty:
+                conn.execute(
+                    text("""
+                        INSERT INTO products (sku, name_ar, name_en, category_id, is_active)
+                        VALUES (:sku, :ar, :en, :cid, TRUE)
+                        ON CONFLICT (sku) DO NOTHING
+                    """),
+                    [
+                        {
+                            "sku": r["sku"],
+                            "ar": str(r["name_ar"])[:100],
+                            "en": str(r["name_en"])[:100],
+                            "cid": cat_map.get(r["categ_EN"]),
+                        }
+                        for _, r in prods.iterrows()
+                    ],
+                )
+            prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
+
+            # 3. Uploads row — appears in Upload History so user can delete it
+            upload_id = conn.execute(
+                text("""
+                    INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped)
+                    VALUES (:uid, :fn, :ri, :rs)
+                    RETURNING id
+                """),
+                {"uid": user_id, "fn": SAMPLE_FILENAME_LABEL, "ri": to_import, "rs": skipped},
             ).scalar()
-            if has_data:
-                return None
 
-        df_raw = pd.read_excel(SAMPLE_FILE, engine="openpyxl")
-        norm, to_import, skipped = _normalize_dataframe(df_raw, user_id)
+            # 4. Orders — bulk
+            orders = norm[
+                ["order_reference", "order_datetime", "customer_name",
+                 "time_period", "season", "occasion"]
+            ].drop_duplicates(subset=["order_reference"])
+            if not orders.empty:
+                conn.execute(
+                    text("""
+                        INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
+                                            time_period, season, occasion)
+                        VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
+                        ON CONFLICT (order_reference) DO NOTHING
+                    """),
+                    [
+                        {
+                            "uid": upload_id,
+                            "oref": r["order_reference"],
+                            "odt": r["order_datetime"],
+                            "cname": r["customer_name"],
+                            "tp": r["time_period"],
+                            "sn": r["season"],
+                            "oc": r["occasion"],
+                        }
+                        for _, r in orders.iterrows()
+                    ],
+                )
+            order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 
-        # 1. Categories
-        cats = norm[["categ_AR", "categ_EN"]].drop_duplicates()
-        if not cats.empty:
-            conn.execute(
-                text("""
-                    INSERT INTO categories (name_ar, name_en) VALUES (:ar, :en)
-                    ON CONFLICT DO NOTHING
-                """),
-                [{"ar": r["categ_AR"], "en": r["categ_EN"]} for _, r in cats.iterrows()],
-            )
-        cat_map = dict(conn.execute(text("SELECT name_en, id FROM categories")).all())
+            # 5. Order items — bulk in batches
+            item_payload: list[dict] = []
+            for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
+                oid = order_map.get(r["order_reference"])
+                pid = prod_map.get(r["sku"])
+                if oid is None or pid is None:
+                    continue
+                item_payload.append({
+                    "oid": oid, "pid": pid, "qty": int(r["quantity"]),
+                    "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
+                })
 
-        # 2. Products
-        prods = norm[["sku", "name_ar", "name_en", "categ_EN"]].drop_duplicates()
-        if not prods.empty:
-            conn.execute(
-                text("""
-                    INSERT INTO products (sku, name_ar, name_en, category_id, is_active)
-                    VALUES (:sku, :ar, :en, :cid, TRUE)
-                    ON CONFLICT (sku) DO NOTHING
-                """),
-                [
-                    {
-                        "sku": r["sku"],
-                        "ar": str(r["name_ar"])[:100],
-                        "en": str(r["name_en"])[:100],
-                        "cid": cat_map.get(r["categ_EN"]),
-                    }
-                    for _, r in prods.iterrows()
-                ],
-            )
-        prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
+            if item_payload:
+                insert_items = text("""
+                    INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
+                    VALUES (:oid, :pid, :qty, :price, :cost)
+                """)
+                BATCH = 1000
+                for i in range(0, len(item_payload), BATCH):
+                    conn.execute(insert_items, item_payload[i:i + BATCH])
 
-        # 3. Uploads row — appears in Upload History so user can delete it
-        upload_id = conn.execute(
-            text("""
-                INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped)
-                VALUES (:uid, :fn, :ri, :rs)
-                RETURNING id
-            """),
-            {"uid": user_id, "fn": SAMPLE_FILENAME_LABEL, "ri": to_import, "rs": skipped},
-        ).scalar()
-
-        # 4. Orders — bulk
-        orders = norm[
-            ["order_reference", "order_datetime", "customer_name",
-             "time_period", "season", "occasion"]
-        ].drop_duplicates(subset=["order_reference"])
-        if not orders.empty:
-            conn.execute(
-                text("""
-                    INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
-                                        time_period, season, occasion)
-                    VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
-                    ON CONFLICT (order_reference) DO NOTHING
-                """),
-                [
-                    {
-                        "uid": upload_id,
-                        "oref": r["order_reference"],
-                        "odt": r["order_datetime"],
-                        "cname": r["customer_name"],
-                        "tp": r["time_period"],
-                        "sn": r["season"],
-                        "oc": r["occasion"],
-                    }
-                    for _, r in orders.iterrows()
-                ],
-            )
-        order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
-
-        # 5. Order items — bulk in batches
-        item_payload: list[dict] = []
-        for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
-            oid = order_map.get(r["order_reference"])
-            pid = prod_map.get(r["sku"])
-            if oid is None or pid is None:
-                continue
-            item_payload.append({
-                "oid": oid, "pid": pid, "qty": int(r["quantity"]),
-                "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
-            })
-
-        if item_payload:
-            insert_items = text("""
-                INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
-                VALUES (:oid, :pid, :qty, :price, :cost)
-            """)
-            BATCH = 1000
-            for i in range(0, len(item_payload), BATCH):
-                conn.execute(insert_items, item_payload[i:i + BATCH])
-
-        return {
-            "user_id": user_id,
-            "upload_id": upload_id,
-            "rows": to_import,
-            "items": len(item_payload),
-            "orders": len(orders),
-            "skipped": skipped,
-        }
+            return {
+                "user_id": user_id,
+                "upload_id": upload_id,
+                "rows": to_import,
+                "items": len(item_payload),
+                "orders": len(orders),
+                "skipped": skipped,
+            }
+    finally:
+        lock.release()
 
 
 def seed_all_users() -> None:
