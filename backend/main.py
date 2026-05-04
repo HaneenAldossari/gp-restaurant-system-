@@ -68,6 +68,32 @@ def _ensure_schema_and_seed() -> None:
             _seed_samples()
         except Exception as e:
             log.warning("Skipping sample-data seed: %s", e)
+        # Pre-warm the forecast cache for every workspace that has data.
+        # Without this, the FIRST /api/forecast/total request after a
+        # deploy takes ~50 seconds because Prophet has to train from
+        # scratch. That exceeds the browser fetch timeout (~30s in
+        # most browsers), so the user sees "Failed to fetch" while
+        # training is still running on the server, and subsequent
+        # requests compete with the still-running training for RAM
+        # (free tier = 512MB) — the whole API can effectively freeze.
+        # Pre-warming runs the slow training during the deploy window
+        # instead of during a real user's first click.
+        try:
+            from sqlalchemy import text as _text
+            from routes_forecast import _get_predictions  # noqa: WPS437
+            with engine.connect() as conn:
+                user_ids = [r[0] for r in conn.execute(_text(
+                    "SELECT id FROM users WHERE role IN ('admin','manager') ORDER BY id"
+                )).fetchall()]
+            for uid in user_ids:
+                try:
+                    _get_predictions(int(uid))
+                    log.info("Pre-warmed forecast cache for user_id=%s", uid)
+                except Exception as e:
+                    # Workspace might have no data yet — that's fine.
+                    log.info("No forecast pre-warm for user_id=%s: %s", uid, e)
+        except Exception as e:
+            log.warning("Skipping forecast pre-warm: %s", e)
     except Exception as e:
         # Don't crash the app if seeding fails — health endpoint still works
         log.error("Schema/seed bootstrap failed: %s", e)
