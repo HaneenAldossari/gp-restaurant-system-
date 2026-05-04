@@ -1,6 +1,6 @@
 # Testing Briefs — pick a role
 
-The team is split into four testing roles. Each brief is one self-contained
+The team is split into three testing roles. Each brief is one self-contained
 page with system explanation, test scenarios, expected results, and the
 report format. Pick the one that matches what you want to own.
 
@@ -8,8 +8,7 @@ report format. Pick the one that matches what you want to own.
 |---|---|---|
 | 🔮 Forecasting | [TESTING_FORECASTING.md](TESTING_FORECASTING.md) | Prophet predictions vs the actual 2022 dataset |
 | 🍽️ Menu Insights | [TESTING_MENU_INSIGHTS.md](TESTING_MENU_INSIGHTS.md) | Boston Matrix classification + What-If price/cost simulator (incl. elasticity equations) |
-| 📤 Upload, Data & Reports | [TESTING_UPLOAD_DATA_REPORTS.md](TESTING_UPLOAD_DATA_REPORTS.md) | Excel ingest, dataset quality, CSV/PDF exports |
-| 📊 Dashboard & Overall QA | [TESTING_DASHBOARD_AND_QA.md](TESTING_DASHBOARD_AND_QA.md) | Dashboard accuracy, auth, permissions, mobile, edge cases, pre-defense sweep |
+| 📊 Dashboard, Upload & Reports | [TESTING_DASHBOARD_UPLOAD_REPORTS.md](TESTING_DASHBOARD_UPLOAD_REPORTS.md) | Dashboard accuracy, login & permissions, Excel upload flow, CSV/PDF exports, combined report |
 
 ## Common ground rules
 
