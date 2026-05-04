@@ -20,6 +20,8 @@ from routes_dashboard import router as dashboard_router
 from routes_menu import router as menu_router
 from routes_forecast import router as forecast_router
 from routes_upload import router as upload_router
+from routes_auth import router as auth_router
+from routes_team import router as team_router
 
 
 def _ensure_schema_and_seed() -> None:
@@ -159,6 +161,8 @@ def _startup() -> None:
 
 
 # Register route modules
+app.include_router(auth_router)
+app.include_router(team_router)
 app.include_router(dashboard_router)
 app.include_router(menu_router)
 app.include_router(forecast_router)

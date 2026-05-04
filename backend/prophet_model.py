@@ -245,17 +245,24 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
         except Exception:
             pass
 
+        # Saudi National Day — single day. Earlier we used a -1/+1
+        # window thinking it captured "long weekend" lift, but in real
+        # data the day BEFORE is just a normal weekday and the day
+        # AFTER is often an early-close (e.g. Sep 24, 2022 had only
+        # 77 orders vs Sep 23's 270). Pooling those into one holiday
+        # coefficient drags the National Day lift toward zero or even
+        # negative. Single-day window keeps the coefficient pure.
         if cur.month == 9 and cur.day == 23:
             rows.append({"holiday": "saudi_national_day", "ds": cur,
-                         "lower_window": -1, "upper_window": 1})
+                         "lower_window": 0, "upper_window": 0})
 
-        # Saudi Founding Day — Feb 22, established 2022. Treat the same
-        # as National Day with a 3-day window (1 day before + day + 1
-        # after) since restaurants and cafes typically see elevated
-        # traffic from the long weekend and cultural events.
+        # Saudi Founding Day — Feb 22, established 2022. Same reasoning:
+        # in 2022 the cafe was closed for the entire surrounding week,
+        # so a -1/+1 window pulls the holiday coefficient toward 0.
+        # Single-day keeps the signal isolated.
         if cur.month == 2 and cur.day == 22:
             rows.append({"holiday": "saudi_founding_day", "ds": cur,
-                         "lower_window": -1, "upper_window": 1})
+                         "lower_window": 0, "upper_window": 0})
 
         # Payday split into two phases — same reasoning as Eid:
         # the late window (days 27-31) shows +25% lift in the data
@@ -559,10 +566,28 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
             'ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period'
         ])
 
-    # Skip closure days from training (no fillna) — store-closure
-    # zeros would teach Prophet that this date-type has no demand,
-    # suppressing future Eid al-Fitr (etc.) forecasts to zero. See
-    # _train_one_product comment for details.
+    # Drop early-close / partial-day outliers before training. Real
+    # closure days (qty == 0) never appear in the join; what DOES make
+    # it through are days where the cafe opened briefly — e.g. Sep 24,
+    # 2022 had 77 orders before shutting for the National Day break.
+    # Including those as "normal Saturdays" pulls the weekly Saturday
+    # coefficient down by 30-40%, suppressing every future Saturday
+    # forecast (and the one before/after each holiday because of the
+    # closure-stretch pattern).
+    #
+    # Per-weekday threshold: anything below 30% of that weekday's
+    # MEDIAN is treated as a partial-day outlier. Median (not mean)
+    # so a single low day can't drag the threshold down with it.
+    total_daily['__dow'] = total_daily['ds'].dt.day_name()
+    dow_median = total_daily.groupby('__dow')['y'].transform('median')
+    outlier_mask = total_daily['y'] < (dow_median * 0.30)
+    if outlier_mask.any():
+        n = int(outlier_mask.sum())
+        sample = total_daily.loc[outlier_mask, ['ds', 'y']].head(5).to_dict('records')
+        print(f"[outlier] dropping {n} early-close days from training: {sample}")
+        total_daily = total_daily.loc[~outlier_mask].reset_index(drop=True)
+    total_daily = total_daily.drop(columns=['__dow'])
+
     total_daily['season'] = total_daily['ds'].apply(compute_season)
     total_daily = _attach_regressors(total_daily)
 
@@ -599,6 +624,22 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     forecast = forecast[['ds', 'yhat']]
     forecast['dow'] = forecast['ds'].dt.day_name()
     forecast['season'] = forecast['ds'].apply(compute_season)
+
+    # Per-weekday floor: even with outlier-cleaning, Prophet's trend
+    # extrapolation can dip uncomfortably for far-future dates or for
+    # days adjacent to a holiday window. We never let a forecast fall
+    # below the 25th percentile of that weekday's historical revenue —
+    # that's the "bad-but-still-realistic" Tuesday, the worst-week-of-
+    # the-year level of demand. Anything lower is the model under-
+    # predicting; the manager would never see it in practice.
+    dow_p25 = total_daily.groupby(total_daily['ds'].dt.day_name())['y'].quantile(0.25).to_dict()
+    forecast['__floor'] = forecast['dow'].map(dow_p25).fillna(0.0)
+    below_floor = forecast['yhat'] < forecast['__floor']
+    if below_floor.any():
+        n = int(below_floor.sum())
+        print(f"[floor] lifting {n} days from below-p25 toward the weekday p25 floor")
+    forecast['yhat'] = forecast[['yhat', '__floor']].max(axis=1)
+    forecast = forecast.drop(columns=['__floor'])
 
     # ── Per-product, per-(season, dow, time_period) historical share ─────
     # CRITICAL: keying the share by SEASON is what lets the disaggregation

@@ -96,7 +96,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 #         demand" and suppressing every future Eid al-Fitr to zero.
 #         Closures now treated as missing data; calibration target
 #         excludes them too.
-MODEL_VERSION = "v18"
+MODEL_VERSION = "v20"  # Drop early-close partial-day outliers from training + per-weekday p25 floor on daily forecast
 
 
 def _cache_file(user_id: int) -> Path:
@@ -513,11 +513,35 @@ def _daily_revenue(user_id: int, df_future: pd.DataFrame) -> dict[str, float]:
 
 
 def _notable_events(regressors: list[dict]) -> list[dict]:
-    """Flag notable occasions in the forecast window (non-"Normal Day" days)."""
+    """Flag notable occasions in the forecast window.
+
+    A single date can carry MULTIPLE labels — `compute_occasion` only
+    returns the highest-priority one (e.g. Ramadan over Post-payday),
+    but for the UI we want to surface every active band so a manager
+    sees that Mar 1-5 is BOTH Ramadan AND post-payday spending. We
+    re-derive the secondary tags here from the date itself instead of
+    threading them through compute_occasion.
+    """
     events = []
     for r in regressors:
-        if r["occasion"] != "Normal Day":
-            events.append({"date": r["date"], "event": r["occasion"]})
+        date = pd.Timestamp(r["date"])
+        primary = r["occasion"]
+
+        # Primary label (the highest-priority event compute_occasion picked)
+        if primary != "Normal Day":
+            events.append({"date": r["date"], "event": primary})
+
+        # Secondary: post-payday spending — surfaces independently of
+        # whatever the primary tag was (Ramadan, Eid bounce, weekend, etc).
+        # Day 27 itself is "Payday"; days 28-31 + 1-5 are spillover.
+        is_post_payday_window = (date.day >= 28 or date.day <= 5)
+        is_payday_anchor = date.day == 27
+        if (is_payday_anchor and primary != "Payday") or (
+            is_post_payday_window and primary != "Post-payday spending"
+        ):
+            label = "Payday" if is_payday_anchor else "Post-payday spending"
+            events.append({"date": r["date"], "event": label})
+
     return events
 
 
@@ -756,10 +780,24 @@ def _calibrate_holidays(
     # toward the historical avg. Pooling across multiple future years
     # of Eid would let one year's low prediction yank up another
     # year's already-fine prediction.
+    #
+    # Per-occasion scale cap. Eid stays at 2× because we have multiple
+    # in-year phases of data (pre / day1 / bounce / post) — Prophet's
+    # baseline fit is already close, so a tight cap is right. Solar
+    # one-shot holidays (National Day, Founding Day) only have ONE
+    # historical sample and the day-of-week of the future occurrence
+    # often differs from the historical one (e.g. 2022 Sep 23 was
+    # Friday, 2026 will be Wednesday) — that weekly-seasonality gap
+    # alone can be 1.5×, so we need a wider cap to land near the
+    # observed lift instead of stalling halfway there.
     CALIBRATE_OCCASIONS = (
         "Ramadan", "Eid al-Fitr", "Eid al-Adha",
         "Saudi National Day", "Saudi Founding Day",
     )
+    SCALE_CAP = {
+        "Saudi National Day": 3.5,
+        "Saudi Founding Day": 3.5,
+    }
     for occ in CALIBRATE_OCCASIONS:
         target = hist_per_occasion.get(occ)
         if not target:
@@ -779,6 +817,7 @@ def _calibrate_holidays(
             else:
                 events.append([d])
 
+        cap = SCALE_CAP.get(occ, 2.0)
         for event_dates in events:
             event_mask = fut_mask & out["ds"].isin(event_dates)
             event_per_day = (
@@ -788,10 +827,10 @@ def _calibrate_holidays(
                 continue
             if target <= event_per_day * 1.10:
                 continue  # already within 10%, leave it
-            scale = min(target / event_per_day, 2.0)  # tight cap
+            scale = min(target / event_per_day, cap)
             out.loc[event_mask, "yhat"] = out.loc[event_mask, "yhat"] * scale
             print(f"[calibrate] {occ} {event_dates[0].date()}–{event_dates[-1].date()}: "
-                  f"pred {event_per_day:.0f} → target {target:.0f} → scale {scale:.2f}")
+                  f"pred {event_per_day:.0f} → target {target:.0f} → scale {scale:.2f} (cap {cap})")
 
     out = out.drop(columns=["__occ"])
     return out
