@@ -512,6 +512,96 @@ def _daily_revenue(user_id: int, df_future: pd.DataFrame) -> dict[str, float]:
     return {str(k): float(v) for k, v in out.items()}
 
 
+def _forecast_heatmap(user_id: int, df_future: pd.DataFrame) -> tuple[list[dict], dict | None]:
+    """Build a (weekday × hour) heatmap from FORECAST quantities, plus
+    the peak (weekday, hour) cell for an above-the-chart callout.
+
+    Why this isn't just a copy of the dashboard heatmap: the cell
+    *values* come from Prophet's predicted yhat for the active forecast
+    window, NOT from historical orders. So when Eid, payday, or any
+    weekly-seasonality lift bumps a specific weekday in the forecast,
+    that weekday's row glows brighter than it would in a historical
+    snapshot. The within-day hour distribution still uses historical
+    hour-share inside each (weekday, time_period) bucket — Prophet
+    predicts at time-period granularity, not hour, so we borrow the
+    hour shape from history while letting the volume scale with the
+    forecast.
+
+    Output format matches the dashboard heatmap exactly so the existing
+    HeatmapChart component can render it without changes.
+    """
+    if df_future.empty:
+        return [], None
+
+    df_hist = load_data(user_id)
+    if df_hist.empty or "hour" not in df_hist.columns or "day_name" not in df_hist.columns:
+        return [], None
+
+    # Hour share within each (weekday, time_period) — fraction of
+    # historical orders that landed in each hour given the bucket.
+    src = df_hist.dropna(subset=["day_name", "time_period", "hour"]).copy()
+    if src.empty:
+        return [], None
+    src["hour"] = src["hour"].astype(int)
+    counts = src.groupby(["day_name", "time_period", "hour"]).size().reset_index(name="n")
+    bucket_totals = counts.groupby(["day_name", "time_period"])["n"].transform("sum")
+    counts["share"] = counts["n"] / bucket_totals.where(bucket_totals > 0, 1)
+
+    # Aggregate forecast by (weekday, time_period). Prophet rows have
+    # `time_period` (morning/afternoon/evening/night) and `ds`; we
+    # group totals at this granularity, then expand to hours.
+    fut = df_future.copy()
+    fut["day_name"] = pd.to_datetime(fut["ds"]).dt.day_name()
+    fut_agg = (
+        fut.groupby(["day_name", "time_period"])["yhat"]
+        .sum().reset_index().rename(columns={"yhat": "fc_qty"})
+    )
+
+    merged = fut_agg.merge(
+        counts[["day_name", "time_period", "hour", "share"]],
+        on=["day_name", "time_period"],
+        how="left",
+    )
+    merged["hour_qty"] = merged["fc_qty"] * merged["share"].fillna(0)
+    grid = merged.groupby(["day_name", "hour"])["hour_qty"].sum().reset_index()
+
+    # Format identically to dashboard heatmap output so the existing
+    # HeatmapChart component renders without modification.
+    days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_short = {"Monday": "Mon", "Tuesday": "Tue", "Wednesday": "Wed", "Thursday": "Thu",
+                 "Friday": "Fri", "Saturday": "Sat", "Sunday": "Sun"}
+    OPEN_HOUR, CLOSE_HOUR = 6, 2
+    if CLOSE_HOUR < OPEN_HOUR:
+        hour_seq = list(range(OPEN_HOUR, 24)) + list(range(0, CLOSE_HOUR + 1))
+    else:
+        hour_seq = list(range(OPEN_HOUR, CLOSE_HOUR + 1))
+    hour_labels = {h: f"{h % 12 or 12}{'AM' if h < 12 else 'PM'}" for h in hour_seq}
+
+    out: list[dict] = []
+    peak_value = -1.0
+    peak_cell: dict | None = None
+    avg_total = 0.0
+    avg_count = 0
+    for d in days_order:
+        for h in hour_seq:
+            row = grid[(grid["day_name"] == d) & (grid["hour"] == h)]
+            val_f = float(row["hour_qty"].iloc[0]) if len(row) else 0.0
+            val_int = int(round(val_f))
+            out.append({"day": day_short[d], "hour": hour_labels[h], "value": val_int})
+            if val_f > 0:
+                avg_total += val_f
+                avg_count += 1
+            if val_f > peak_value:
+                peak_value = val_f
+                peak_cell = {"day": day_short[d], "hour": hour_labels[h], "value": val_int}
+
+    if peak_cell and avg_count > 0:
+        avg = avg_total / avg_count
+        peak_cell["vsAverage"] = round((peak_value - avg) / avg * 100) if avg > 0 else None
+
+    return out, peak_cell
+
+
 def _notable_events(regressors: list[dict]) -> list[dict]:
     """Flag notable occasions in the forecast window.
 
@@ -1182,11 +1272,14 @@ def forecast_category(
             "qty": int(daily_ints[peak_idx]),
         }
     events = _notable_events(regressors)
+    heatmap_data, heatmap_peak = _forecast_heatmap(user_id, future)
 
     return {
         "scope": "category",
         "target": target,
         "period": period,
+        "heatmapData": heatmap_data,
+        "heatmapPeak": heatmap_peak,
         "model": "Prophet with season, occasion, and time-of-day regressors",
         "itemCount": int(per_product.shape[0]),
         "totalPredictedQuantity": total_qty,
@@ -1289,11 +1382,14 @@ def forecast_total(
             "qty": int(daily_ints[peak_idx]),
         }
     events = _notable_events(regressors)
+    heatmap_data, heatmap_peak = _forecast_heatmap(user_id, future)
 
     return {
         "scope": "total",
         "period": period,
         "model": "Prophet with season, occasion, and time-of-day regressors",
+        "heatmapData": heatmap_data,
+        "heatmapPeak": heatmap_peak,
         "totalPredictedQuantity": total_qty,
         "totalPredictedRevenue": round(revenue, 2),
         "totalPredictedProfit": round(profit, 2),
