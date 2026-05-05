@@ -657,21 +657,21 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     forecast['dow'] = forecast['ds'].dt.day_name()
     forecast['season'] = forecast['ds'].apply(compute_season)
 
-    # Per-weekday floor: even with outlier-cleaning, Prophet's trend
-    # extrapolation can dip uncomfortably for far-future dates or for
-    # days adjacent to a holiday window. We never let a forecast fall
-    # below the 25th percentile of that weekday's historical revenue —
-    # that's the "bad-but-still-realistic" Tuesday, the worst-week-of-
-    # the-year level of demand. Anything lower is the model under-
-    # predicting; the manager would never see it in practice.
-    dow_p25 = total_daily.groupby(total_daily['ds'].dt.day_name())['y'].quantile(0.25).to_dict()
-    forecast['__floor'] = forecast['dow'].map(dow_p25).fillna(0.0)
-    below_floor = forecast['yhat'] < forecast['__floor']
-    if below_floor.any():
-        n = int(below_floor.sum())
-        print(f"[floor] lifting {n} days from below-p25 toward the weekday p25 floor")
-    forecast['yhat'] = forecast[['yhat', '__floor']].max(axis=1)
-    forecast = forecast.drop(columns=['__floor'])
+    # No per-weekday floor. We previously lifted any prediction below
+    # the 25th percentile of that weekday's history toward the floor,
+    # then weakened it to p5; both squashed the day-to-day variance
+    # well below reality (compression ratio ≈ 0.10 at p25 and ≈ 0.31
+    # at p5 — real std ≈ 86 in the v4 dataset). Manager-facing review
+    # called the chart unnaturally smooth and questioned the model's
+    # honesty when the dashboard's actuals showed clear ups-and-downs.
+    #
+    # Trusting Prophet's natural output instead — `clip(lower=0)`
+    # above keeps the trend non-negative on far-future dates, the
+    # holiday-gated outlier filter (line 591) keeps genuine low days
+    # in training so the model knows what "low" looks like, and
+    # _bake_baseline_scale in the route layer handles level
+    # adjustment without compressing variance.
+    forecast['yhat'] = forecast['yhat'].clip(lower=0)
 
     # ── Per-product, per-(season, dow, time_period) historical share ─────
     # CRITICAL: keying the share by SEASON is what lets the disaggregation
