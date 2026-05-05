@@ -63,15 +63,19 @@ def _ensure_schema_and_seed() -> None:
                     ALTER TABLE uploads
                     ADD COLUMN IF NOT EXISTS is_synthetic BOOLEAN NOT NULL DEFAULT FALSE
                 """))
-                # Drop the OLD single-batch auto-load row if any user
-                # still has it. The new seed creates two separate
-                # uploads (real + synthetic) so the dashboard can
-                # filter properly. Deleting cascades to orders +
-                # order_items via the FK on `uploads`, so on the next
-                # login the auto-seed re-creates the modern shape.
+                # Drop ANY pre-existing auto-load uploads so the
+                # current seed structure takes over on next login.
+                # Covers three historical labels: the original
+                # single-row label, and the two-row split we briefly
+                # shipped (real days + imputed days). Cascades to
+                # orders + order_items via the FK on `uploads`.
                 conn.execute(text("""
                     DELETE FROM uploads
-                    WHERE filename = 'orders_2022.xlsx (auto-loaded)'
+                    WHERE filename IN (
+                        'orders_2022.xlsx (auto-loaded)',
+                        'orders_2022.xlsx (auto-loaded — real days)',
+                        'orders_2022.xlsx (auto-loaded — imputed days)'
+                    )
                 """))
         except Exception as e:
             log.warning("Schema migration skipped: %s", e)

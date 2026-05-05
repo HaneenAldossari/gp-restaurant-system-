@@ -27,17 +27,17 @@ from sqlalchemy import text
 from db import get_engine
 
 SAMPLE_FILE = Path(__file__).parent / "sample_data" / "orders_2022.xlsx"
-# When the dataset has an `is_imputed` column (the curated
-# "real + auto-filled" version), we create TWO upload rows so the
-# is_synthetic flag on `uploads` lets Dashboard / Menu Insights show
-# real-only KPIs while Forecasting still trains on the full timeline.
-SAMPLE_FILENAME_REAL = "orders_2022.xlsx (auto-loaded — real days)"
-SAMPLE_FILENAME_IMPUTED = "orders_2022.xlsx (auto-loaded — imputed days)"
-# Legacy single-batch label, kept only so the migration in main.py
-# can identify and drop pre-split seeds for re-import.
-SAMPLE_FILENAME_LEGACY = "orders_2022.xlsx (auto-loaded)"
-# Backwards-compat for any code still importing the old name.
-SAMPLE_FILENAME_LABEL = SAMPLE_FILENAME_REAL
+# Single upload row in the UI. We previously split the seed into two
+# rows (real + imputed) to support per-surface filtering, but every
+# surface (Dashboard, Menu Insights, Forecast) ended up using the
+# full dataset, so the split was just visual noise in Upload History.
+# is_synthetic stays on the schema as a future-proofing column but
+# is unused by the current seed.
+SAMPLE_FILENAME_LABEL = "orders_2022.xlsx (auto-loaded)"
+# Legacy two-row labels kept only so the migration in main.py can
+# identify and drop them on existing deployments for clean re-seed.
+SAMPLE_FILENAME_LEGACY_REAL = "orders_2022.xlsx (auto-loaded — real days)"
+SAMPLE_FILENAME_LEGACY_IMPUTED = "orders_2022.xlsx (auto-loaded — imputed days)"
 
 # Per-user lock so concurrent seed calls (e.g. two near-simultaneous
 # logins or a startup-seed racing with a login-seed) don't both run
@@ -256,19 +256,15 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
                 )
             prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
-            # Split norm into REAL and IMPUTED batches. Each batch
-            # gets its own `uploads` row so the is_synthetic flag can
-            # gate KPI views (Dashboard, Menu Insights). When the
-            # source file is the raw POS export with no is_imputed
-            # column, _normalize_dataframe sets it all to False, so
-            # this collapses to one batch with is_synthetic=False.
-            batches: list[tuple[str, pd.DataFrame, bool]] = []
-            real_norm = norm[~norm["is_imputed"]].copy()
-            imp_norm = norm[norm["is_imputed"]].copy()
-            if not real_norm.empty:
-                batches.append((SAMPLE_FILENAME_REAL, real_norm, False))
-            if not imp_norm.empty:
-                batches.append((SAMPLE_FILENAME_IMPUTED, imp_norm, True))
+            # One unified upload row regardless of whether the source
+            # file has imputed rows. The is_synthetic column on
+            # `uploads` stays available for future per-surface filters
+            # but isn't used by the current seed — every surface
+            # (Dashboard, Menu Insights, Forecast) consumes the full
+            # dataset.
+            batches: list[tuple[str, pd.DataFrame, bool]] = [
+                (SAMPLE_FILENAME_LABEL, norm, False),
+            ]
 
             total_items = 0
             total_orders = 0
