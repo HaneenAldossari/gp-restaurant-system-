@@ -1277,7 +1277,7 @@ def forecast_category(
             "qty": int(daily_ints[peak_idx]),
         }
     events = _notable_events(regressors)
-    heatmap_data, heatmap_peak = _forecast_heatmap(user_id, future)
+    heatmap_data, heatmap_peak = _forecast_heatmap(user_id, cat_rows)
 
     return {
         "scope": "category",
