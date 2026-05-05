@@ -312,7 +312,17 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
         # prior here is safe.
         changepoint_prior_scale=0.05,
     )
-    m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)
+    # Weekly seasonality at Prophet's default strength. We previously
+    # ran prior_scale=100 / fourier_order=10 to push the weekly cycle
+    # harder, but the pattern-fidelity eval (backend/eval/PATTERN_REPORT.md
+    # findings #4 and #5) showed this drove forecast lag-7 autocorrelation
+    # to 0.94 against real-world ~0 — a deterministic 7-day cycle that
+    # made the chart look unnaturally repetitive and compressed
+    # day-to-day variance to 30-50% of actuals on most categories.
+    # Returning to Prophet's published defaults (prior=10, order=4) lets
+    # noise punch through and matches reviewer expectation for a
+    # baseline Prophet configuration.
+    m.add_seasonality(name='weekly', period=7, fourier_order=4, prior_scale=10.0)
     for col in REGRESSOR_COLS:
         m.add_regressor(col)
     return m
@@ -644,6 +654,32 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     model = _build_prophet(holidays_df)
     model.fit(_weighted(total_daily)[fit_cols])
 
+    # Daily residual std — drives the 80% prediction band shown on
+    # the chart. Prophet's mean prediction is intentionally smooth
+    # (it captures systematic patterns; stochastic noise is excluded
+    # by design); the band represents the spread of realisations
+    # around the expected value. We use the actual training residuals
+    # rather than Prophet's MCMC-derived intervals because:
+    #   - mcmc_samples=0 (the default) makes Prophet's lower/upper a
+    #     Laplace approximation that's narrow on this dataset
+    #   - residual std reflects the noise the model genuinely couldn't
+    #     explain on the data we trained on — directly comparable to
+    #     what a manager sees when realised days swing around the line
+    # We compute it on the unweighted real-day-only training subset
+    # so the band reflects realistic variance, not the imputed-day
+    # band's artificially small std.
+    train_pred = model.predict(total_daily[['ds'] + REGRESSOR_COLS])
+    real_only = total_daily[~total_daily['is_imputed']]
+    if len(real_only) >= 5:
+        real_pred = train_pred.iloc[real_only.index]
+        residuals = real_only['y'].values - real_pred['yhat'].values
+        residual_std = float(np.std(residuals))
+        train_mean = float(real_only['y'].mean()) or 1.0
+    else:
+        residuals = total_daily['y'].values - train_pred['yhat'].values
+        residual_std = float(np.std(residuals))
+        train_mean = float(total_daily['y'].mean()) or 1.0
+
     future_dates = pd.date_range(
         start=total_daily['ds'].min(),
         end=total_daily['ds'].max() + pd.Timedelta(days=horizon_days),
@@ -798,6 +834,14 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     pred_df = pred_df.sort_values(by=['product', 'ds', 'time_period'])
 
     out = pred_df[['ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period']]
+
+    # Attach the daily residual stats so the route layer can render
+    # an 80% prediction band on the chart without re-fitting the
+    # model. `attrs` survives most pandas ops; the route caches the
+    # values explicitly anyway in case `attrs` gets dropped on a
+    # downstream copy / merge.
+    out.attrs['daily_residual_std'] = float(residual_std)
+    out.attrs['daily_train_mean'] = float(train_mean)
 
     if save_csv:
         out.to_csv("all_products_predictions.csv", index=False)
