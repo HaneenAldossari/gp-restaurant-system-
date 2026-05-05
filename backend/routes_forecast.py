@@ -591,29 +591,52 @@ def _forecast_heatmap(user_id: int, df_future: pd.DataFrame) -> tuple[list[dict]
     if df_future.empty:
         return [], None
 
-    df_hist = load_data(user_id)
+    # Real-day-only history for the hour share. Reviewer found that the
+    # heatmap mis-located the peak (showed Wed 10 PM as darkest when
+    # 2022 actuals have Fri 9 PM as the busiest hour). One driver was
+    # the hour distribution being computed from real + imputed rows;
+    # imputed days are bucketed by time_period and don't have a real
+    # within-period hour distribution, which biased certain
+    # (weekday, time_period, hour) cells.
+    df_hist = load_data(user_id, include_synthetic=False)
     if df_hist.empty or "hour" not in df_hist.columns or "day_name" not in df_hist.columns:
         return [], None
 
     # Hour share within each (weekday, time_period) — fraction of
-    # historical orders that landed in each hour given the bucket.
+    # historical UNITS (not order count) that landed in each hour.
+    # Switched from .size() to summing Quantity so the share reflects
+    # actual demand-weight per hour, which is what the forecast yhat
+    # is also denominated in.
     src = df_hist.dropna(subset=["day_name", "time_period", "hour"]).copy()
     if src.empty:
         return [], None
     src["hour"] = src["hour"].astype(int)
-    counts = src.groupby(["day_name", "time_period", "hour"]).size().reset_index(name="n")
+    counts = (
+        src.groupby(["day_name", "time_period", "hour"])["Quantity"]
+        .sum().reset_index().rename(columns={"Quantity": "n"})
+    )
     bucket_totals = counts.groupby(["day_name", "time_period"])["n"].transform("sum")
     counts["share"] = counts["n"] / bucket_totals.where(bucket_totals > 0, 1)
 
-    # Aggregate forecast by (weekday, time_period). Prophet rows have
-    # `time_period` (morning/afternoon/evening/night) and `ds`; we
-    # group totals at this granularity, then expand to hours.
+    # Aggregate forecast by (weekday, time_period), then divide by the
+    # number of OCCURRENCES of that weekday in the window so the cell
+    # value represents an AVERAGE per occurrence rather than a sum
+    # over the window. Without this, a 30-day forecast's heatmap reads
+    # 4-5× the value of a 7-day forecast's heatmap, with the same
+    # underlying pattern — confusing managers comparing periods.
+    # Per-occurrence is also directly comparable to historical per-
+    # day averages the manager already knows.
     fut = df_future.copy()
     fut["day_name"] = pd.to_datetime(fut["ds"]).dt.day_name()
-    fut_agg = (
-        fut.groupby(["day_name", "time_period"])["yhat"]
-        .sum().reset_index().rename(columns={"yhat": "fc_qty"})
+    occur = (
+        fut.groupby("day_name")["ds"].nunique().rename("n_occur").reset_index()
     )
+    fut_agg = (
+        fut.groupby(["day_name", "time_period"])["yhat"].sum()
+        .reset_index().rename(columns={"yhat": "fc_qty_total"})
+    )
+    fut_agg = fut_agg.merge(occur, on="day_name", how="left")
+    fut_agg["fc_qty"] = fut_agg["fc_qty_total"] / fut_agg["n_occur"].where(fut_agg["n_occur"] > 0, 1)
 
     merged = fut_agg.merge(
         counts[["day_name", "time_period", "hour", "share"]],
