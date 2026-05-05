@@ -45,11 +45,22 @@ def menu_engineering(
     total_qty = int(items["qtySold"].sum())
     items["popularity"] = (items["qtySold"] / total_qty * 100).round(2)
 
-    avg_pop = float(items["popularity"].mean())
+    # Popularity cutoff = 70 % × mean (Kasavana & Smith, 1982). The
+    # arithmetic mean of popularity is mathematically `100 / N` (every
+    # share sums to 100, divided by N items), which on a heavy
+    # right-skew sales distribution becomes a tail-test rather than an
+    # "above average" test. With N = 129 the raw mean is 0.78 % while
+    # the median is 0.40 % — the canonical 0.7×-mean cutoff is the
+    # menu-engineering literature's standard fix and lands much closer
+    # to the median in practice. Margin stays at the raw mean: margin
+    # is bounded [0, 100 %], symmetrically distributed in a typical
+    # menu, and the mean is the right anchor there.
+    avg_pop_raw = float(items["popularity"].mean())
     avg_margin = float(items["profitMargin"].mean())
+    pop_cutoff = 0.7 * avg_pop_raw
 
     def classify(row):
-        hi_pop = row["popularity"] >= avg_pop
+        hi_pop = row["popularity"] >= pop_cutoff
         hi_mar = row["profitMargin"] >= avg_margin
         if hi_pop and hi_mar:
             return "Star"
@@ -80,7 +91,10 @@ def menu_engineering(
     return {
         "items": items_list,
         "quadrants": quadrants,
-        "avgPopularity": round(avg_pop, 2),
+        # `avgPopularity` is the literal threshold used to split high-vs-low
+        # popularity (70 % of the raw mean — Kasavana–Smith). The frontend's
+        # quadrant axis line should track this, not the raw mean.
+        "avgPopularity": round(pop_cutoff, 2),
         "avgMargin": round(avg_margin, 2),
     }
 
@@ -271,38 +285,86 @@ def _optimal_price(
     SAFE_DOWN_CAP = 0.20
 
     # ── Classification-aware overrides ─────────────────────────────────
-    # For Dogs and Puzzles, raising the price makes the underlying problem
-    # worse. Boston-Matrix menu-engineering guidance is: try a discount,
-    # a promotion, or removal — not a price hike.
+    # For Dogs and Puzzles, the textbook menu-engineering move is "try a
+    # discount" — but that only helps when the item is genuinely elastic
+    # (|e| > 1). For inelastic items (coffee, tea, Saudi coffee with
+    # |e| ∈ [0.4, 0.9]) a discount lifts qty less than it cuts margin
+    # and destroys profit. Eval against our own simulator showed 73 of
+    # 129 suggestions losing money — Puzzle/Dog discounts on inelastic
+    # SKUs were the entire problem (`backend/eval/MENU_REPORT.md`,
+    # findings #1, #3).
+    #
+    # The gate below splits each branch:
+    #   • elastic (e < -1.05) → discount, as before, but with `round`
+    #     instead of `floor` so the realised cut matches the intended
+    #     -10 % / -8 % rather than -12 % to -15 % (finding #4).
+    #   • inelastic Puzzle → suggest a small price increase + push
+    #     visibility (merchandising) instead of cutting the price.
+    #   • inelastic Dog → no price move; flag for recipe rework or
+    #     removal. The product itself is the problem, not the price.
+    is_elastic = elasticity < -1.05
+
     if classification == "Dog":
-        suggested = max(int(math.floor(current_price * 0.90)), int(math.ceil(cost * 1.20)))
-        if suggested >= int(round(current_price)):
-            suggested = int(round(current_price)) - 1
-        suggested = max(suggested, int(math.ceil(cost * 1.05)))  # keep a minimum margin
+        if is_elastic:
+            suggested = max(int(round(current_price * 0.90)), int(math.ceil(cost * 1.20)))
+            if suggested >= int(round(current_price)):
+                suggested = int(round(current_price)) - 1
+            suggested = max(suggested, int(math.ceil(cost * 1.05)))  # keep a minimum margin
+            return {
+                "price": suggested,
+                "kind": "dog_discount",
+                "rationale": (
+                    "This item is elastic and underperforming — a small discount may pick "
+                    "up enough demand to lift profit. If it still doesn't move after a "
+                    "two-week test, consider replacing it on the menu."
+                ),
+                "inelastic": False,
+            }
+        # Inelastic Dog: no price move recommended.
         return {
-            "price": suggested,
-            "kind": "dog_discount",
+            "price": int(round(current_price)),
+            "kind": "dog_remove",
             "rationale": (
-                "This item is underperforming — raising the price will likely make it sell "
-                "even less. Try a small discount to see if it picks up. If it still doesn't "
-                "move, consider replacing it on the menu."
+                "This item is underperforming AND demand here is price-insensitive — "
+                "discounting won't lift volume enough to be worth the margin hit, and "
+                "raising the price will hurt the few sales it does have. "
+                "Better moves: rework the recipe, change positioning on the menu, or "
+                "replace it with something else."
             ),
-            "inelastic": elasticity > -1.0,
+            "inelastic": True,
         }
 
     if classification == "Puzzle":
-        suggested = max(int(math.floor(current_price * 0.92)), int(math.ceil(cost * 1.30)))
-        if suggested >= int(round(current_price)):
-            suggested = int(round(current_price)) - 1
+        if is_elastic:
+            suggested = max(int(round(current_price * 0.92)), int(math.ceil(cost * 1.30)))
+            if suggested >= int(round(current_price)):
+                suggested = int(round(current_price)) - 1
+            return {
+                "price": suggested,
+                "kind": "puzzle_discount",
+                "rationale": (
+                    "Strong margin, low sales, and demand is price-sensitive — a small "
+                    "discount should attract enough new customers to make up the margin "
+                    "give-up. Pair with a menu feature or combo to drive visibility."
+                ),
+                "inelastic": False,
+            }
+        # Inelastic Puzzle: discount would destroy profit. Test a small
+        # price *increase* and push visibility instead — the issue is
+        # awareness, not price.
+        test_price = int(math.ceil(current_price * 1.05))
+        if test_price <= int(round(current_price)):
+            test_price = int(round(current_price)) + 1
         return {
-            "price": suggested,
-            "kind": "puzzle_discount",
+            "price": test_price,
+            "kind": "puzzle_visibility",
             "rationale": (
-                "This item has strong margin but isn't selling enough. A small discount "
-                "could attract more customers while keeping the margin healthy. Pair with "
-                "a feature on the menu or a combo to drive visibility."
+                "Strong margin but low sales — and demand here is price-insensitive. "
+                "Discounting would shrink margin without lifting volume much. The "
+                "real lever is visibility: a menu feature, a combo, or staff "
+                "recommendation. A small price test can also fund the merchandising."
             ),
-            "inelastic": elasticity > -1.0,
+            "inelastic": True,
         }
 
     # ── Star / Plowhorse / unknown: elasticity-based logic ────────────
@@ -587,11 +649,12 @@ def simulate_price_change(
     elasticity_low = elasticity_central * (1 + ELASTICITY_UNCERTAINTY)   # more elastic
     elasticity_high = elasticity_central * (1 - ELASTICITY_UNCERTAINTY)  # less elastic
 
-    # Menu-wide thresholds (kept constant — treats other items as fixed)
+    # Menu-wide thresholds — must match the classifier's cutoffs.
+    # Popularity uses 70 % × mean (Kasavana–Smith); margin uses raw mean.
     items["profit"] = items["revenue"] - items["totalCost"]
     items["profitMargin"] = (items["profit"] / items["revenue"] * 100).fillna(0)
     items["popularity"] = items["qtySold"] / total_qty_all * 100
-    avg_pop = float(items["popularity"].mean())
+    avg_pop = 0.7 * float(items["popularity"].mean())
     avg_margin = float(items["profitMargin"].mean())
 
     effective_cost = float(new_cost) if new_cost is not None else current_cost
@@ -810,7 +873,10 @@ def simulate_bulk(
     items["profit"] = items["revenue"] - items["totalCost"]
     items["profitMargin"] = (items["profit"] / items["revenue"] * 100).fillna(0)
     items["popularity"] = items["qtySold"] / total_qty_all * 100
-    avg_pop = float(items["popularity"].mean())
+    # Popularity threshold = 70 % × mean (Kasavana–Smith). Must match
+    # the classifier in /api/menu-engineering so an item's bulk-sim
+    # group membership is consistent with what the user sees in the UI.
+    avg_pop = 0.7 * float(items["popularity"].mean())
     avg_margin = float(items["profitMargin"].mean())
     items["classification"] = items.apply(
         lambda r: _classify(r["popularity"], r["profitMargin"], avg_pop, avg_margin),
@@ -830,9 +896,16 @@ def simulate_bulk(
     for _, row in target_items.iterrows():
         elast, _ = _elasticity_for(str(row["category"]))
         new_price = float(row["price"]) * (1 + price_change_pct / 100)
-        new_qty = _project_qty(int(row["qtySold"]), float(row["price"]), new_price, elast)
-        new_rev = new_qty * new_price
-        new_prof = new_qty * (new_price - float(row["cost"]))
+        # Float qty inside revenue/profit math so low-volume items don't
+        # introduce ±25 SAR-per-item staircase errors when projected qty
+        # crosses an integer boundary. The single-item /simulate already
+        # does this; bulk was using the int-rounded value, which biases
+        # the aggregate by a few hundred SAR on a 40-item move
+        # (eval/MENU_REPORT.md finding #6).
+        new_qty_float = _project_qty_float(int(row["qtySold"]), float(row["price"]), new_price, elast)
+        new_qty_display = int(round(new_qty_float))
+        new_rev = new_qty_float * new_price
+        new_prof = new_qty_float * (new_price - float(row["cost"]))
         new_group_revenue += new_rev
         new_group_profit += new_prof
         affected.append({
@@ -841,7 +914,7 @@ def simulate_bulk(
             "currentPrice": round(float(row["price"]), 2),
             "newPrice": round(new_price, 2),
             "currentQty": int(row["qtySold"]),
-            "projectedQty": new_qty,
+            "projectedQty": new_qty_display,
             "elasticityUsed": elast,
         })
 
