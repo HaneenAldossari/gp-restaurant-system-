@@ -52,6 +52,30 @@ def _ensure_schema_and_seed() -> None:
                     if statement:
                         conn.execute(text(statement))
             log.info("Schema created.")
+
+        # Idempotent migrations for existing databases — runs every
+        # startup, safe to repeat. Add new columns / indexes here as
+        # the schema evolves so deployed Render Postgres stays in sync
+        # without manual psql sessions.
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    ALTER TABLE uploads
+                    ADD COLUMN IF NOT EXISTS is_synthetic BOOLEAN NOT NULL DEFAULT FALSE
+                """))
+                # Drop the OLD single-batch auto-load row if any user
+                # still has it. The new seed creates two separate
+                # uploads (real + synthetic) so the dashboard can
+                # filter properly. Deleting cascades to orders +
+                # order_items via the FK on `uploads`, so on the next
+                # login the auto-seed re-creates the modern shape.
+                conn.execute(text("""
+                    DELETE FROM uploads
+                    WHERE filename = 'orders_2022.xlsx (auto-loaded)'
+                """))
+        except Exception as e:
+            log.warning("Schema migration skipped: %s", e)
+
         # Seed teammate users (idempotent — uses ON CONFLICT DO NOTHING)
         try:
             from seed_users import seed as _seed

@@ -55,7 +55,10 @@ def dashboard(
     category: str | None = Query(None),
     user_id: int = Depends(get_current_user_id),
 ):
-    df = filter_data(load_data(user_id), start_date, end_date, category)
+    # include_synthetic=False → KPIs / charts show ONLY real POS data,
+    # not auto-seeded fill-in days. Forecasting still uses the full
+    # timeline; that split is intentional.
+    df = filter_data(load_data(user_id, include_synthetic=False), start_date, end_date, category)
 
     if df.empty:
         raise HTTPException(status_code=404, detail="No data for the selected filters")

@@ -9,8 +9,10 @@ from sqlalchemy import text
 
 from db import get_engine
 
-# Per-user in-memory cache — keyed by user_id.
-_df_by_user: dict[int, pd.DataFrame] = {}
+# Per-user in-memory cache — keyed by (user_id, include_synthetic) so
+# the dashboard's "real-only" view and the forecast's "everything" view
+# don't trash each other's cache.
+_df_by_user: dict[tuple[int, bool], pd.DataFrame] = {}
 
 _QUERY = """
 SELECT
@@ -23,7 +25,8 @@ SELECT
     o.order_reference     AS "Order ID",
     o.time_period         AS time_period,
     o.season              AS season,
-    o.occasion            AS occasion
+    o.occasion            AS occasion,
+    u.is_synthetic        AS is_synthetic
 FROM order_items oi
 JOIN orders     o ON oi.order_id    = o.id
 JOIN uploads    u ON o.upload_id    = u.id
@@ -33,14 +36,24 @@ WHERE u.user_id = :user_id
 """
 
 
-def load_data(user_id: int = 1) -> pd.DataFrame:
+def load_data(user_id: int = 1, include_synthetic: bool = True) -> pd.DataFrame:
     """Run one big JOIN (scoped to this user) and shape the result to match
-    the legacy Excel DataFrame."""
-    cached = _df_by_user.get(user_id)
+    the legacy Excel DataFrame.
+
+    When `include_synthetic=False`, rows from any upload marked
+    `is_synthetic=TRUE` (e.g. auto-seeded fill-in days) are excluded.
+    Use that mode for user-facing KPIs on Dashboard / Menu Insights.
+    Forecast training stays on the default (everything) so Prophet
+    sees a denser time series."""
+    key = (user_id, bool(include_synthetic))
+    cached = _df_by_user.get(key)
     if cached is not None:
         return cached
 
-    df = pd.read_sql(text(_QUERY), get_engine(), params={"user_id": user_id})
+    query = _QUERY
+    if not include_synthetic:
+        query = query + " AND u.is_synthetic = FALSE"
+    df = pd.read_sql(text(query), get_engine(), params={"user_id": user_id})
     df["Order Datetime"] = pd.to_datetime(df["Order Datetime"])
     df["Order Date"]  = df["Order Datetime"].dt.normalize()
     df["Order Time"]  = df["Order Datetime"].dt.time
@@ -55,20 +68,23 @@ def load_data(user_id: int = 1) -> pd.DataFrame:
     df["profit"]       = (df["Total Price"] - df["Product Cost"]).round(2)
     df["margin_pct"]   = ((df["profit"] / df["Total Price"]) * 100).round(2)
 
-    _df_by_user[user_id] = df
+    _df_by_user[key] = df
     return df
 
 
 def reload_data(user_id: int | None = None) -> None:
     """Invalidate cache(s) — call after a new upload.
 
-    If `user_id` is given, drop only that user's cache. Otherwise clear every
-    user's cache (useful after cross-cutting admin actions).
+    If `user_id` is given, drop both views (real-only + everything) for
+    that user. Otherwise clear every user's cache (useful after
+    cross-cutting admin actions).
     """
     if user_id is None:
         _df_by_user.clear()
     else:
-        _df_by_user.pop(user_id, None)
+        for key in list(_df_by_user.keys()):
+            if key[0] == user_id:
+                _df_by_user.pop(key, None)
 
 
 def filter_data(

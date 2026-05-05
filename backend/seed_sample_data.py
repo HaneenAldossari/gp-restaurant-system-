@@ -27,7 +27,17 @@ from sqlalchemy import text
 from db import get_engine
 
 SAMPLE_FILE = Path(__file__).parent / "sample_data" / "orders_2022.xlsx"
-SAMPLE_FILENAME_LABEL = "orders_2022.xlsx (auto-loaded)"
+# When the dataset has an `is_imputed` column (the curated
+# "real + auto-filled" version), we create TWO upload rows so the
+# is_synthetic flag on `uploads` lets Dashboard / Menu Insights show
+# real-only KPIs while Forecasting still trains on the full timeline.
+SAMPLE_FILENAME_REAL = "orders_2022.xlsx (auto-loaded — real days)"
+SAMPLE_FILENAME_IMPUTED = "orders_2022.xlsx (auto-loaded — imputed days)"
+# Legacy single-batch label, kept only so the migration in main.py
+# can identify and drop pre-split seeds for re-import.
+SAMPLE_FILENAME_LEGACY = "orders_2022.xlsx (auto-loaded)"
+# Backwards-compat for any code still importing the old name.
+SAMPLE_FILENAME_LABEL = SAMPLE_FILENAME_REAL
 
 # Per-user lock so concurrent seed calls (e.g. two near-simultaneous
 # logins or a startup-seed racing with a login-seed) don't both run
@@ -79,9 +89,40 @@ def _normalize_dataframe(df: pd.DataFrame, user_id: int) -> tuple[pd.DataFrame, 
     norm = pd.DataFrame()
     # Namespace by user_id so all four teammates get an independent copy
     # under the global UNIQUE (order_reference) constraint.
-    norm["order_reference"] = (
-        f"u{user_id}:" + df[col_order_ref].astype(str).str.strip()
+    #
+    # When the order_reference is missing (typical of auto-imputed
+    # rows), synthesise a stable ref from the row's date + time_period
+    # so all imputed items in the same bucket batch into one synthetic
+    # "order" — mirrors how real cafes group multiple line items per
+    # visit. Without this, all NaN refs collapse to the same key and
+    # the unique constraint blows up.
+    col_date_for_ref = _pick_col(df, ["date", "Date", "order_date", "created_at"])
+    # Float-NaN, string "nan", and other empties — all need to trip the
+    # synthetic-ref fallback.
+    is_missing_ref = (
+        df[col_order_ref].isna()
+        | df[col_order_ref].astype(str).str.strip().isin(["nan", "NaT", "None", ""])
     )
+    ref_str = df[col_order_ref].astype(str).str.strip()
+    if is_missing_ref.any():
+        if col_date_for_ref:
+            date_part = pd.to_datetime(df[col_date_for_ref], errors="coerce").dt.strftime("%Y-%m-%d").fillna("nodate")
+        else:
+            date_part = pd.Series("nodate", index=df.index)
+        if col_time_period:
+            tp_part = df[col_time_period].astype(str).str.strip().replace({"nan": "all", "": "all", "NaT": "all"})
+        else:
+            tp_part = pd.Series("all", index=df.index)
+        # Include row index too so per-row uniqueness holds even when
+        # multiple imputed line items share the same (date, period).
+        # We dedupe later in the orders-table insert via
+        # drop_duplicates(["order_reference"]); having a unique ref per
+        # ROW means each line item lands in its own order which mirrors
+        # the real data shape (most cafe orders have 1-2 line items).
+        idx_part = pd.Series(df.index.astype(str), index=df.index)
+        synth = "syn:" + date_part + ":" + tp_part + ":r" + idx_part
+        ref_str = ref_str.where(~is_missing_ref, synth)
+    norm["order_reference"] = f"u{user_id}:" + ref_str
     norm["sku"] = (
         df[col_sku].astype(str).str.strip()
         if col_sku
@@ -98,6 +139,13 @@ def _normalize_dataframe(df: pd.DataFrame, user_id: int) -> tuple[pd.DataFrame, 
     norm["season"] = df[col_season].astype(str).str.strip() if col_season else None
     norm["occasion"] = df[col_occasion].astype(str).str.strip() if col_occasion else None
     norm["time_period"] = df[col_time_period].astype(str).str.strip() if col_time_period else None
+    # Propagate is_imputed when the dataset has it (the curated
+    # real+filled file does, the raw POS export doesn't). Used later
+    # to split the seed into two upload rows: one real, one synthetic.
+    if "is_imputed" in df.columns:
+        norm["is_imputed"] = df["is_imputed"].fillna(False).astype(bool)
+    else:
+        norm["is_imputed"] = False
 
     norm["order_datetime"] = _build_datetime(df)
 
@@ -208,72 +256,107 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
                 )
             prod_map = dict(conn.execute(text("SELECT sku, id FROM products")).all())
 
-            # 3. Uploads row — appears in Upload History so user can delete it
-            upload_id = conn.execute(
-                text("""
-                    INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped)
-                    VALUES (:uid, :fn, :ri, :rs)
-                    RETURNING id
-                """),
-                {"uid": user_id, "fn": SAMPLE_FILENAME_LABEL, "ri": to_import, "rs": skipped},
-            ).scalar()
+            # Split norm into REAL and IMPUTED batches. Each batch
+            # gets its own `uploads` row so the is_synthetic flag can
+            # gate KPI views (Dashboard, Menu Insights). When the
+            # source file is the raw POS export with no is_imputed
+            # column, _normalize_dataframe sets it all to False, so
+            # this collapses to one batch with is_synthetic=False.
+            batches: list[tuple[str, pd.DataFrame, bool]] = []
+            real_norm = norm[~norm["is_imputed"]].copy()
+            imp_norm = norm[norm["is_imputed"]].copy()
+            if not real_norm.empty:
+                batches.append((SAMPLE_FILENAME_REAL, real_norm, False))
+            if not imp_norm.empty:
+                batches.append((SAMPLE_FILENAME_IMPUTED, imp_norm, True))
 
-            # 4. Orders — bulk
-            orders = norm[
-                ["order_reference", "order_datetime", "customer_name",
-                 "time_period", "season", "occasion"]
-            ].drop_duplicates(subset=["order_reference"])
-            if not orders.empty:
-                conn.execute(
+            total_items = 0
+            total_orders = 0
+            first_upload_id = None
+            for filename, batch_norm, is_synthetic in batches:
+                # 3. Uploads row — appears in Upload History so user can
+                #    delete it. is_synthetic flag drives the dashboard /
+                #    menu-insights filter.
+                upload_id = conn.execute(
                     text("""
-                        INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
-                                            time_period, season, occasion)
-                        VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
-                        ON CONFLICT (order_reference) DO NOTHING
+                        INSERT INTO uploads (user_id, filename, rows_imported, rows_skipped, is_synthetic)
+                        VALUES (:uid, :fn, :ri, :rs, :syn)
+                        RETURNING id
                     """),
-                    [
-                        {
-                            "uid": upload_id,
-                            "oref": r["order_reference"],
-                            "odt": r["order_datetime"],
-                            "cname": r["customer_name"],
-                            "tp": r["time_period"],
-                            "sn": r["season"],
-                            "oc": r["occasion"],
-                        }
-                        for _, r in orders.iterrows()
-                    ],
+                    {
+                        "uid": user_id, "fn": filename,
+                        "ri": int(len(batch_norm)),
+                        "rs": skipped if not is_synthetic else 0,
+                        "syn": bool(is_synthetic),
+                    },
+                ).scalar()
+                if first_upload_id is None:
+                    first_upload_id = upload_id
+
+                # 4. Orders — bulk
+                orders = batch_norm[
+                    ["order_reference", "order_datetime", "customer_name",
+                     "time_period", "season", "occasion"]
+                ].drop_duplicates(subset=["order_reference"])
+                if not orders.empty:
+                    conn.execute(
+                        text("""
+                            INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
+                                                time_period, season, occasion)
+                            VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
+                            ON CONFLICT (order_reference) DO NOTHING
+                        """),
+                        [
+                            {
+                                "uid": upload_id,
+                                "oref": r["order_reference"],
+                                "odt": r["order_datetime"],
+                                "cname": r["customer_name"],
+                                "tp": r["time_period"],
+                                "sn": r["season"],
+                                "oc": r["occasion"],
+                            }
+                            for _, r in orders.iterrows()
+                        ],
+                    )
+                order_map = dict(
+                    conn.execute(text(
+                        "SELECT order_reference, id FROM orders WHERE upload_id = :uid"
+                    ), {"uid": upload_id}).all()
                 )
-            order_map = dict(conn.execute(text("SELECT order_reference, id FROM orders")).all())
 
-            # 5. Order items — bulk in batches
-            item_payload: list[dict] = []
-            for _, r in norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
-                oid = order_map.get(r["order_reference"])
-                pid = prod_map.get(r["sku"])
-                if oid is None or pid is None:
-                    continue
-                item_payload.append({
-                    "oid": oid, "pid": pid, "qty": int(r["quantity"]),
-                    "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
-                })
+                # 5. Order items — bulk in batches
+                item_payload: list[dict] = []
+                for _, r in batch_norm[["order_reference", "sku", "quantity", "unit_price", "unit_cost"]].iterrows():
+                    oid = order_map.get(r["order_reference"])
+                    pid = prod_map.get(r["sku"])
+                    if oid is None or pid is None:
+                        continue
+                    item_payload.append({
+                        "oid": oid, "pid": pid, "qty": int(r["quantity"]),
+                        "price": float(r["unit_price"]), "cost": float(r["unit_cost"]),
+                    })
 
-            if item_payload:
-                insert_items = text("""
-                    INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
-                    VALUES (:oid, :pid, :qty, :price, :cost)
-                """)
-                BATCH = 1000
-                for i in range(0, len(item_payload), BATCH):
-                    conn.execute(insert_items, item_payload[i:i + BATCH])
+                if item_payload:
+                    insert_items = text("""
+                        INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost)
+                        VALUES (:oid, :pid, :qty, :price, :cost)
+                    """)
+                    BATCH = 1000
+                    for i in range(0, len(item_payload), BATCH):
+                        conn.execute(insert_items, item_payload[i:i + BATCH])
+
+                total_items += len(item_payload)
+                total_orders += len(orders)
 
             return {
                 "user_id": user_id,
-                "upload_id": upload_id,
+                "upload_id": first_upload_id,
                 "rows": to_import,
-                "items": len(item_payload),
-                "orders": len(orders),
+                "items": total_items,
+                "orders": total_orders,
                 "skipped": skipped,
+                "batches": [(b[0], len(b[1]), b[2]) for b in batches],
             }
     finally:
         lock.release()

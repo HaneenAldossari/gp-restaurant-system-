@@ -36,10 +36,38 @@ def _build_datetime(df: pd.DataFrame) -> pd.Series:
     col_time = _pick_col(df, ["time", "Time", "order_time"])
     col_date = _pick_col(df, ["date", "Date", "order_date"])
     col_dt = _pick_col(df, ["created_at", "order_datetime", "datetime"])
+    col_tp = _pick_col(df, ["time_period", "timePeriod"])
+
+    # When the file has rows with a date but a missing/NaN time (e.g.
+    # auto-imputed fill-in days), fall back to a representative hour
+    # derived from `time_period` so the row doesn't get dropped at
+    # the next "drop NaT" step. Distributes imputed rows across the
+    # day instead of stacking them all at midnight.
+    def _fallback_hour(tp_value) -> str:
+        tp = str(tp_value).strip().lower() if tp_value is not None else ""
+        return {
+            "morning":   "10:00:00",
+            "afternoon": "14:00:00",
+            "evening":   "18:00:00",
+            "night":     "22:00:00",
+        }.get(tp, "12:00:00")
+
+    def _clean_time_series(time_col_name: str) -> pd.Series:
+        raw = df[time_col_name].astype(str).str.strip()
+        is_missing = raw.isin(["nan", "NaT", "None", ""]) | raw.isna()
+        if not is_missing.any():
+            return raw
+        # Build per-row fallback using time_period if present, else noon
+        if col_tp:
+            fallback = df[col_tp].apply(_fallback_hour)
+        else:
+            fallback = pd.Series("12:00:00", index=df.index)
+        return raw.where(~is_missing, fallback)
+
     # date column + time column → combine them directly.
     if col_date and col_time:
         return pd.to_datetime(
-            df[col_date].astype(str).str.strip() + " " + df[col_time].astype(str).str.strip(),
+            df[col_date].astype(str).str.strip() + " " + _clean_time_series(col_time),
             errors="coerce",
         )
     # datetime column + separate time column → take the date portion of
@@ -49,8 +77,7 @@ def _build_datetime(df: pd.DataFrame) -> pd.Series:
     # would be silently ignored and every order would be labelled "night".
     if col_dt and col_time:
         dt = pd.to_datetime(df[col_dt], errors="coerce")
-        t = df[col_time].astype(str).str.strip()
-        combined = dt.dt.strftime("%Y-%m-%d") + " " + t
+        combined = dt.dt.strftime("%Y-%m-%d") + " " + _clean_time_series(col_time)
         return pd.to_datetime(combined, errors="coerce")
     if col_dt:
         return pd.to_datetime(df[col_dt], errors="coerce")

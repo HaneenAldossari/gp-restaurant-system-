@@ -28,7 +28,13 @@ CREATE TABLE uploads (
     filename VARCHAR(255) NOT NULL,
     rows_imported INT NOT NULL,
     rows_skipped INT NOT NULL DEFAULT 0,
-    uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()
+    uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    -- Marks rows as imputed/synthetic (e.g. seeded sample-data filling
+    -- gaps for missing-data days). Real POS uploads stay FALSE. The
+    -- Forecast model trains on synthetic rows for a denser time series;
+    -- Dashboard / Menu Insights filter them out so user-facing KPIs
+    -- reflect only real sales.
+    is_synthetic BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- 3. Categories
