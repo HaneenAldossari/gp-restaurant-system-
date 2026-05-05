@@ -64,7 +64,8 @@ CREATE TABLE orders (
     customer_name VARCHAR(100),
     time_period VARCHAR(20),     -- morning / afternoon / evening / night
     season VARCHAR(20),          -- Winter / Spring / Summer / Autumn
-    occasion VARCHAR(50)         -- Normal Day / Ramadan / Eid / etc.
+    occasion VARCHAR(50),        -- Normal Day / Ramadan / Eid / etc.
+    is_imputed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- 6. Order Items

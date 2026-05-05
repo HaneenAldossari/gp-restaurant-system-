@@ -60,6 +60,20 @@ def _fast_schema_setup() -> None:
                     ALTER TABLE uploads
                     ADD COLUMN IF NOT EXISTS is_synthetic BOOLEAN NOT NULL DEFAULT FALSE
                 """))
+                # Per-row imputed flag on orders — needed because the
+                # auto-load is a single upload that mixes real POS days
+                # with imputed fill-in days, so the upload-level
+                # is_synthetic flag can't distinguish them. Dashboard /
+                # Menu Insights filter on this column to show real
+                # recorded data only.
+                conn.execute(text("""
+                    ALTER TABLE orders
+                    ADD COLUMN IF NOT EXISTS is_imputed BOOLEAN NOT NULL DEFAULT FALSE
+                """))
+                # Drop the auto-load upload on every startup so the
+                # background seed re-runs and applies the latest seed
+                # logic (e.g. populating is_imputed from the Excel
+                # `is_imputed` column). Cascades to orders + order_items.
                 conn.execute(text("""
                     DELETE FROM uploads
                     WHERE filename IN (

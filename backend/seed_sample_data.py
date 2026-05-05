@@ -289,17 +289,21 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
                 if first_upload_id is None:
                     first_upload_id = upload_id
 
-                # 4. Orders — bulk
+                # 4. Orders — bulk. is_imputed is the per-order flag
+                # that drives the real-only Dashboard / Menu Insights
+                # filter; it's read from the v4 dataset's `is_imputed`
+                # column (set to True for fill-in days that synthesize
+                # a closure / data-loss stretch).
                 orders = batch_norm[
                     ["order_reference", "order_datetime", "customer_name",
-                     "time_period", "season", "occasion"]
+                     "time_period", "season", "occasion", "is_imputed"]
                 ].drop_duplicates(subset=["order_reference"])
                 if not orders.empty:
                     conn.execute(
                         text("""
                             INSERT INTO orders (upload_id, order_reference, order_datetime, customer_name,
-                                                time_period, season, occasion)
-                            VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc)
+                                                time_period, season, occasion, is_imputed)
+                            VALUES (:uid, :oref, :odt, :cname, :tp, :sn, :oc, :imp)
                             ON CONFLICT (order_reference) DO NOTHING
                         """),
                         [
@@ -311,6 +315,7 @@ def seed_sample_for_user(user_id: int, force: bool = False) -> dict | None:
                                 "tp": r["time_period"],
                                 "sn": r["season"],
                                 "oc": r["occasion"],
+                                "imp": bool(r["is_imputed"]),
                             }
                             for _, r in orders.iterrows()
                         ],

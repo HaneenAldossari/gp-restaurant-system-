@@ -40,9 +40,10 @@ def load_data(user_id: int = 1, include_synthetic: bool = True) -> pd.DataFrame:
     """Run one big JOIN (scoped to this user) and shape the result to match
     the legacy Excel DataFrame.
 
-    When `include_synthetic=False`, rows from any upload marked
-    `is_synthetic=TRUE` (e.g. auto-seeded fill-in days) are excluded.
-    Use that mode for user-facing KPIs on Dashboard / Menu Insights.
+    When `include_synthetic=False`, rows where `orders.is_imputed=TRUE`
+    (fill-in days the auto-load synthesized for closure / data-loss
+    stretches) are excluded. Use that mode for user-facing KPIs on
+    Dashboard / Menu Insights — every number traces to a real POS row.
     Forecast training stays on the default (everything) so Prophet
     sees a denser time series."""
     key = (user_id, bool(include_synthetic))
@@ -52,7 +53,7 @@ def load_data(user_id: int = 1, include_synthetic: bool = True) -> pd.DataFrame:
 
     query = _QUERY
     if not include_synthetic:
-        query = query + " AND u.is_synthetic = FALSE"
+        query = query + " AND o.is_imputed = FALSE"
     df = pd.read_sql(text(query), get_engine(), params={"user_id": user_id})
     df["Order Datetime"] = pd.to_datetime(df["Order Datetime"])
     df["Order Date"]  = df["Order Datetime"].dt.normalize()
