@@ -291,38 +291,37 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
     baseline_scale post-step normalises the scale to historical levels."""
     m = Prophet(
         daily_seasonality=False,
-        weekly_seasonality=False,  # added manually below for stronger weight
+        weekly_seasonality=False,  # added manually below
         yearly_seasonality=with_yearly,
         holidays=holidays_df if not holidays_df.empty else None,
         seasonality_prior_scale=25.0,
-        # 500 (was 250). User's spreadsheet analysis showed Eid al-Adha
-        # 2022 had +42% revenue lift vs rest of year, but the model at
-        # prior=250 was only fitting +7% of that. With one occurrence
-        # of each Eid in the training data Prophet's MAP fit is shy
-        # about large coefficients — loosening the regularization
-        # further lets the rare-event holidays speak. Validated against
-        # the user's day-by-day Eid pattern (158 / 328 / 252 / 244 orders).
         holidays_prior_scale=500.0,
-        # 0.05 (was 0.01). The conservative prior was tuned to keep
-        # long-future trend extrapolation tame, but it left the model
-        # unable to bend to mid-period level shifts — most visibly the
-        # December 2022 surge (actuals ~480-666/day for 8 days against
-        # an autumn baseline of ~210). The weekday p25 floor in
-        # run_forecast prevents far-future collapse, so loosening the
-        # prior here is safe.
-        changepoint_prior_scale=0.05,
+        # growth='flat' disables Prophet's linear/logistic trend
+        # entirely. With only one year of training data, the trend
+        # component picked up the positive Q4 drift from the December
+        # surge and extrapolated it upward across the full forecast
+        # horizon — Prophet's raw 1095-day mean inflated to ~465/day
+        # at any changepoint setting, vs the historical 195/day. The
+        # global baseline rescaler then under-corrected the near-
+        # future window (forecast mean was 280/day vs real 206 — 35 %
+        # over, reviewer-flagged). With growth='flat', Prophet emits
+        # a single intercept plus seasonality + holidays + regressors;
+        # weekly cycle and Eid lifts are preserved, multi-year trend
+        # extrapolation is gone, and the rescaler only needs minor
+        # adjustment. Restoring trend would need 2+ years of data so
+        # year-over-year growth signal can be separated from one-off
+        # late-year noise.
+        growth='flat',
     )
-    # Weekly seasonality at Prophet's default strength. We previously
-    # ran prior_scale=100 / fourier_order=10 to push the weekly cycle
-    # harder, but the pattern-fidelity eval (backend/eval/PATTERN_REPORT.md
-    # findings #4 and #5) showed this drove forecast lag-7 autocorrelation
-    # to 0.94 against real-world ~0 — a deterministic 7-day cycle that
-    # made the chart look unnaturally repetitive and compressed
-    # day-to-day variance to 30-50% of actuals on most categories.
-    # Returning to Prophet's published defaults (prior=10, order=4) lets
-    # noise punch through and matches reviewer expectation for a
-    # baseline Prophet configuration.
-    m.add_seasonality(name='weekly', period=7, fourier_order=4, prior_scale=10.0)
+    # Weekly seasonality at moderate strength (prior=25, fourier=6).
+    # Previously 100/10 produced a near-deterministic weekly cycle
+    # (lag-7 autocorr 0.94 vs real ~0). Pure-default 10/4 went the
+    # other way — the Fri/Mon lift in 2022 actuals is 1.40× but the
+    # forecast collapsed to 1.15×, which a reviewer flagged as
+    # "no weekend pattern." 25/6 lands in between: visible Fri/Sat
+    # lift, lag-7 still well below the deterministic 0.94, and the
+    # day-to-day pattern is no longer carbon-copy across weeks.
+    m.add_seasonality(name='weekly', period=7, fourier_order=6, prior_scale=25.0)
     for col in REGRESSOR_COLS:
         m.add_regressor(col)
     return m
