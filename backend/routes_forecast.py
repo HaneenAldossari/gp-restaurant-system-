@@ -131,6 +131,12 @@ _horizon_cache: dict[int, int] = {}                     # user_id -> days of cac
 _price_cache: dict[int, dict[str, tuple[float, float]]] = {}  # user_id -> (product -> (unit_price, unit_cost))
 _baseline_cache: dict[int, dict[str, float]] = {}       # user_id -> (product -> historical units/day)
 _seasonal_cache: dict[int, dict[str, dict]] = {}        # user_id -> (product -> seasonality profile)
+# Daily residual stats from training — used to draw the 80% prediction
+# band on the chart. `std` is the sample std of (actual − predicted) on
+# real-day training observations; `mean` is the real-day mean of y. The
+# coefficient of variation (std / mean) lets us scale the band for any
+# subset (category / item) by the subset's predicted magnitude.
+_residual_stats: dict[int, dict[str, float]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -309,6 +315,13 @@ def _get_predictions(user_id: int, required_horizon_days: int | None = None) -> 
             (required_horizon_days or 0) + 30,  # small buffer to absorb adjacent requests
         )
         predictions = run_forecast(model_df, save_csv=False, horizon_days=target_horizon)
+        # Capture the residual stats BEFORE downstream ops that may
+        # drop `attrs` on copy/merge. Used by the chart endpoints to
+        # draw the 80% prediction band.
+        _residual_stats[user_id] = {
+            'std': float(predictions.attrs.get('daily_residual_std', 0.0)),
+            'mean': float(predictions.attrs.get('daily_train_mean', 1.0)),
+        }
         # One-shot baseline scaling — applied here at training time, not
         # per-request, so the same date returns the same value regardless
         # of whether the caller asks for "next 7 days" or "next 30 days".
@@ -360,6 +373,46 @@ def _baseline_daily_per_product(user_id: int) -> dict[str, float]:
     result = {name: float(v) / data_days for name, v in sums.items()}
     _baseline_cache[user_id] = result
     return result
+
+
+def _add_prediction_band(rows: list[dict], user_id: int, *value_keys: str) -> None:
+    """Mutate `rows` in place — add `<key>_low` / `<key>_high` for each
+    requested value key, representing the 80 % prediction interval
+    around the point forecast.
+
+    The band uses the coefficient of variation (std / mean) of the
+    daily training residuals captured at fit time. CV is dimensionless
+    so it survives the route layer's `_bake_baseline_scale` multiplier
+    without re-derivation, and the same CV applies to any subset
+    (category / item) by scaling the half-width to that subset's
+    predicted magnitude per day.
+
+    Defended in the thesis as: 'Prophet's point forecast is the
+    expected daily realisation; the 80% prediction interval is
+    derived from the training residual coefficient of variation,
+    representing the day-to-day spread the model could not explain
+    systematically.' The chart shows both so a viewer doesn't
+    mistake a smooth pattern for a deterministic prediction.
+    """
+    stats = _residual_stats.get(user_id) or {}
+    sigma = stats.get('std', 0.0)
+    mu = stats.get('mean', 1.0)
+    if sigma <= 0 or mu <= 0:
+        return
+    cv = sigma / mu
+    # z = 1.282 corresponds to a two-sided 80 % normal interval.
+    # Reasonable for a model with hundreds of training residuals;
+    # the underlying distribution is roughly normal after the
+    # holiday-gated outlier filter.
+    z = 1.282
+    for r in rows:
+        for key in value_keys:
+            v = r.get(key)
+            if v is None:
+                continue
+            half = abs(v) * cv * z
+            r[f'{key}_low'] = max(0, round(v - half))
+            r[f'{key}_high'] = round(v + half)
 
 
 def _bake_baseline_scale(
@@ -1189,6 +1242,17 @@ def forecast_item(
         }
     events = _notable_events(regressors)
 
+    rev_map = _daily_revenue(user_id, future)
+    daily_predictions = [
+        {
+            "date": daily.iloc[i]["date"],
+            "predicted_quantity": daily_ints[i],
+            "predicted_revenue": round(rev_map.get(daily.iloc[i]["date"], 0.0), 2),
+        }
+        for i in range(len(daily_ints))
+    ]
+    _add_prediction_band(daily_predictions, user_id, "predicted_quantity", "predicted_revenue")
+
     return {
         "scope": "item",
         "target": target,
@@ -1199,14 +1263,7 @@ def forecast_item(
         "totalPredictedRevenue": round(revenue, 2),
         "totalPredictedProfit": round(profit, 2),
         "peakDay": peak_info,
-        "dailyPredictions": (lambda rev_map: [
-            {
-                "date": daily.iloc[i]["date"],
-                "predicted_quantity": daily_ints[i],
-                "predicted_revenue": round(rev_map.get(daily.iloc[i]["date"], 0.0), 2),
-            }
-            for i in range(len(daily_ints))
-        ])(_daily_revenue(user_id, future)),
+        "dailyPredictions": daily_predictions,
         "timeOfDayAvailable": time_of_day_available,
         "timePeriodBreakdown": _serialize_rows(future, only_future=False) if time_of_day_available else [],
         # Pre-aggregated per-time-period totals across the whole window.
@@ -1279,6 +1336,17 @@ def forecast_category(
     events = _notable_events(regressors)
     heatmap_data, heatmap_peak = _forecast_heatmap(user_id, cat_rows)
 
+    rev_map = _daily_revenue(user_id, cat_rows)
+    chart_data = [
+        {
+            "date": daily_totals.iloc[i]["date"],
+            "predicted": daily_ints[i],
+            "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
+        }
+        for i in range(len(daily_ints))
+    ]
+    _add_prediction_band(chart_data, user_id, "predicted", "predicted_revenue")
+
     return {
         "scope": "category",
         "target": target,
@@ -1295,14 +1363,7 @@ def forecast_category(
             {"name": r["product"], "totalPredictedQuantity": int(r["totalPredictedQuantity"])}
             for _, r in per_product.iterrows()
         ],
-        "chartData": (lambda rev_map: [
-            {
-                "date": daily_totals.iloc[i]["date"],
-                "predicted": daily_ints[i],
-                "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
-            }
-            for i in range(len(daily_ints))
-        ])(_daily_revenue(user_id, cat_rows)),
+        "chartData": chart_data,
         "regressorsUsed": regressors,
         "notableEvents": events,
         "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
@@ -1389,6 +1450,17 @@ def forecast_total(
     events = _notable_events(regressors)
     heatmap_data, heatmap_peak = _forecast_heatmap(user_id, future)
 
+    rev_map = _daily_revenue(user_id, future)
+    chart_data = [
+        {
+            "date": daily_totals.iloc[i]["date"],
+            "predicted": daily_ints[i],
+            "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
+        }
+        for i in range(len(daily_ints))
+    ]
+    _add_prediction_band(chart_data, user_id, "predicted", "predicted_revenue")
+
     return {
         "scope": "total",
         "period": period,
@@ -1411,14 +1483,7 @@ def forecast_total(
         ],
         "topItems": top_items,
         "bottomItems": bottom_items,
-        "chartData": (lambda rev_map: [
-            {
-                "date": daily_totals.iloc[i]["date"],
-                "predicted": daily_ints[i],
-                "predicted_revenue": round(rev_map.get(daily_totals.iloc[i]["date"], 0.0), 2),
-            }
-            for i in range(len(daily_ints))
-        ])(_daily_revenue(user_id, future)),
+        "chartData": chart_data,
         "regressorsUsed": regressors,
         "notableEvents": events,
         "managerTips": _summarize_for_manager(regressors, total_qty, peak_info, events),
