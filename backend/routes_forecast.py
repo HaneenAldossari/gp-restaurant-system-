@@ -973,8 +973,16 @@ def _calibrate_holidays(
             )
             if event_per_day <= 0:
                 continue
-            if target <= event_per_day * 1.10:
-                continue  # already within 10%, leave it
+            # Skip when predicted is already within 5% of historical
+            # target. We previously left a 10% slack — that masked
+            # under-predictions on Saudi National Day (predicted 290
+            # vs target 313 = 7% gap; user-visible revenue gap was
+            # larger because holiday customers buy higher-priced
+            # items, but the calibrator runs on units). Tighter band
+            # closes the unit gap; the residual mix-shift is a
+            # separate architectural issue.
+            if target <= event_per_day * 1.05:
+                continue
             scale = min(target / event_per_day, cap)
             out.loc[event_mask, "yhat"] = out.loc[event_mask, "yhat"] * scale
             print(f"[calibrate] {occ} {event_dates[0].date()}–{event_dates[-1].date()}: "
