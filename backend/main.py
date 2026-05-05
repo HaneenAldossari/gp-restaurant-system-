@@ -70,14 +70,18 @@ def _fast_schema_setup() -> None:
                     ALTER TABLE orders
                     ADD COLUMN IF NOT EXISTS is_imputed BOOLEAN NOT NULL DEFAULT FALSE
                 """))
-                # Drop the auto-load upload on every startup so the
-                # background seed re-runs and applies the latest seed
-                # logic (e.g. populating is_imputed from the Excel
-                # `is_imputed` column). Cascades to orders + order_items.
+                # One-time cleanup of legacy two-row auto-loads (we
+                # briefly shipped a real-days + imputed-days split).
+                # The CURRENT label `orders_2022.xlsx (auto-loaded)` is
+                # intentionally NOT in this list — wiping it on every
+                # deploy forced a 90s background re-seed per user and
+                # made forecast requests during that window time out.
+                # The seed is idempotent (no-op when order_items
+                # already exist), so leaving the upload in place
+                # across deploys is correct.
                 conn.execute(text("""
                     DELETE FROM uploads
                     WHERE filename IN (
-                        'orders_2022.xlsx (auto-loaded)',
                         'orders_2022.xlsx (auto-loaded — real days)',
                         'orders_2022.xlsx (auto-loaded — imputed days)'
                     )
