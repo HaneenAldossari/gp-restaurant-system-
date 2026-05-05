@@ -55,13 +55,14 @@ def dashboard(
     category: str | None = Query(None),
     user_id: int = Depends(get_current_user_id),
 ):
-    # Use the full dataset (real + imputed). Imputed rows fill 62
-    # data-loss days so the dashboard tells a complete-year story —
-    # closure stretches still show as gaps (correct, the cafe was
-    # actually closed), but data-loss gaps are filled in. Total
-    # revenue here ~1.13M reflects what the cafe really transacted
-    # over the year, not just what the POS export captured.
-    df = filter_data(load_data(user_id), start_date, end_date, category)
+    # Dashboard shows ONLY real recorded data. KPIs, Best Seller, the
+    # daily-revenue chart — all reflect the raw POS export so any
+    # number the supervisor or cafe owner points at can be traced
+    # back to the source data with no imputation explanations.
+    # Forecasting still trains on the full timeline (imputed rows
+    # included) — that's the right split: truth-telling for display,
+    # denser series for the model.
+    df = filter_data(load_data(user_id, include_synthetic=False), start_date, end_date, category)
 
     if df.empty:
         raise HTTPException(status_code=404, detail="No data for the selected filters")
