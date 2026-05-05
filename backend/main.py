@@ -240,6 +240,68 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/_diag", tags=["Health"], summary="Deploy diagnostic")
+def _diag():
+    """One-shot read-only diagnostic — confirms the seed file is on
+    disk, the schema migration applied, and the seed has produced
+    rows. Public so we can hit it without juggling tokens."""
+    import os
+    from pathlib import Path
+    out: dict[str, object] = {}
+    sample = Path(__file__).parent / "sample_data" / "orders_2022.xlsx"
+    out["sample_exists"] = sample.exists()
+    out["sample_size"] = sample.stat().st_size if sample.exists() else None
+    try:
+        with get_engine().connect() as conn:
+            out["uploads_count"] = conn.execute(text("SELECT COUNT(*) FROM uploads")).scalar()
+            out["orders_count"] = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
+            out["items_count"] = conn.execute(text("SELECT COUNT(*) FROM order_items")).scalar()
+            out["users_count"] = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+            try:
+                out["is_imputed_col"] = conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_name='orders' AND column_name='is_imputed'"
+                )).scalar() > 0
+                out["imputed_orders"] = conn.execute(text(
+                    "SELECT COUNT(*) FROM orders WHERE is_imputed = TRUE"
+                )).scalar()
+                out["real_orders"] = conn.execute(text(
+                    "SELECT COUNT(*) FROM orders WHERE is_imputed = FALSE"
+                )).scalar()
+            except Exception as e:
+                out["is_imputed_err"] = str(e)
+    except Exception as e:
+        out["db_err"] = str(e)
+    out["python"] = os.sys.version.split()[0]
+    return out
+
+
+@app.post("/api/_reseed", tags=["Health"], summary="Force re-seed for current user")
+def _reseed(user_id: int = Depends(get_current_user_id)):
+    """Synchronously force-reseed this user's workspace from the
+    bundled v4 dataset. Idempotent — wipes existing auto-load upload
+    + cascading orders/items first, then re-imports. Returns the
+    seed result so we can see exactly what happened."""
+    try:
+        with get_engine().begin() as conn:
+            conn.execute(text("""
+                DELETE FROM uploads
+                WHERE user_id = :uid AND filename IN (
+                    'orders_2022.xlsx (auto-loaded)',
+                    'orders_2022.xlsx (auto-loaded — real days)',
+                    'orders_2022.xlsx (auto-loaded — imputed days)'
+                )
+            """), {"uid": user_id})
+        from data_loader_db import reload_data
+        reload_data(user_id)
+        from seed_sample_data import seed_sample_for_user
+        result = seed_sample_for_user(user_id, force=True)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        import traceback
+        return {"ok": False, "error": str(e), "trace": traceback.format_exc()}
+
+
 @app.get("/api/workspace/users", tags=["Workspace"], summary="List seeded workspace users")
 def list_workspace_users():
     """Return every user in the `users` table — used by the demo UI to let
