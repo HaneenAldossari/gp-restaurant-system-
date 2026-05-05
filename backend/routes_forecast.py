@@ -183,6 +183,11 @@ def _build_input_frame(user_id: int) -> tuple[pd.DataFrame, dict[str, str]]:
         "season": needed["season"],
         "occasion": needed["occasion"],
         "time_period": needed["time_period"],
+        # Pass through so the model can down-weight imputed days when
+        # fitting Prophet. Defaults to False if the column wasn't
+        # selected (older DB connections).
+        "is_imputed": needed["is_imputed"].fillna(False).astype(bool)
+        if "is_imputed" in needed.columns else False,
     })
 
     cat_map = (

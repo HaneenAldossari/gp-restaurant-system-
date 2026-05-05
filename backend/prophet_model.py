@@ -202,45 +202,33 @@ def build_saudi_holidays(start, end) -> pd.DataFrame:
             if h.month == 10 and h.day == 1:
                 key = ("eid_fitr", cur.date().isoformat())
                 if key not in seen:
-                    # 4-phase split. Eid day 1 itself is depressed
-                    # (people at home), so it gets its own anchor
-                    # separate from the post-Eid bounce (days 2-4)
-                    # which is the actual peak in real Saudi data.
-                    #   pre   : 3 days before, anchor -3, spans -3..-1
-                    #   day1  : Eid day 1 only, mostly suppressed
-                    #   bounce: days 2-4, anchor +1, the spike
-                    #   post  : days 5-6, anchor +5, tail
-                    pre_anchor = cur - pd.Timedelta(days=3)
+                    # 2-phase split (was 4 — pre/day1/bounce/post). With
+                    # one year of training data each phase had a single
+                    # observation, which Prophet's MAP fit cannot pin
+                    # a confident +88 % coefficient against. Keeping
+                    # only `day1` (suppressed: most people at home) and
+                    # `bounce` (anchor +1, days 2-4 — the actual spike)
+                    # concentrates the signal into two coefficients
+                    # with one sample each, instead of four.
                     bounce_anchor = cur + pd.Timedelta(days=1)
-                    post_anchor = cur + pd.Timedelta(days=5)
-                    rows.append({"holiday": "eid_fitr_pre", "ds": pre_anchor,
-                                 "lower_window": 0, "upper_window": 2})
                     rows.append({"holiday": "eid_fitr_day1", "ds": cur,
                                  "lower_window": 0, "upper_window": 0})
                     rows.append({"holiday": "eid_fitr_bounce", "ds": bounce_anchor,
-                                 "lower_window": 0, "upper_window": 2})
-                    rows.append({"holiday": "eid_fitr_post", "ds": post_anchor,
-                                 "lower_window": 0, "upper_window": 1})
+                                 "lower_window": 0, "upper_window": 3})
                     seen.add(key)
             if h.month == 12 and h.day == 10:
                 key = ("eid_adha", cur.date().isoformat())
                 if key not in seen:
-                    # Same 4-phase split. Verified against the user's
-                    # 2022 data: Eid Al Adha day 1 (Sat Jul 9) = 158
-                    # orders (LOW), day 2 (Sun Jul 10) = 328 (PEAK
-                    # +88% over avg), days 3-4 = 252-244 (still
-                    # elevated), day 5+ = back to baseline.
-                    pre_anchor = cur - pd.Timedelta(days=3)
+                    # Same 2-phase split. Verified against the 2022
+                    # data: Eid Al Adha day 1 (Sat Jul 9) = 158 orders
+                    # (LOW), day 2 (Sun Jul 10) = 328 (PEAK +88 %),
+                    # days 3-4 = 252/244 (still elevated, captured by
+                    # the bounce window), day 5+ = back to baseline.
                     bounce_anchor = cur + pd.Timedelta(days=1)
-                    post_anchor = cur + pd.Timedelta(days=5)
-                    rows.append({"holiday": "eid_adha_pre", "ds": pre_anchor,
-                                 "lower_window": 0, "upper_window": 2})
                     rows.append({"holiday": "eid_adha_day1", "ds": cur,
                                  "lower_window": 0, "upper_window": 0})
                     rows.append({"holiday": "eid_adha_bounce", "ds": bounce_anchor,
-                                 "lower_window": 0, "upper_window": 2})
-                    rows.append({"holiday": "eid_adha_post", "ds": post_anchor,
-                                 "lower_window": 0, "upper_window": 2})
+                                 "lower_window": 0, "upper_window": 3})
                     seen.add(key)
         except Exception:
             pass
@@ -315,7 +303,14 @@ def _build_prophet(holidays_df: pd.DataFrame, with_yearly: bool = False) -> Prop
         # further lets the rare-event holidays speak. Validated against
         # the user's day-by-day Eid pattern (158 / 328 / 252 / 244 orders).
         holidays_prior_scale=500.0,
-        changepoint_prior_scale=0.01,
+        # 0.05 (was 0.01). The conservative prior was tuned to keep
+        # long-future trend extrapolation tame, but it left the model
+        # unable to bend to mid-period level shifts — most visibly the
+        # December 2022 surge (actuals ~480-666/day for 8 days against
+        # an autumn baseline of ~210). The weekday p25 floor in
+        # run_forecast prevents far-future collapse, so loosening the
+        # prior here is safe.
+        changepoint_prior_scale=0.05,
     )
     m.add_seasonality(name='weekly', period=7, fourier_order=10, prior_scale=100.0)
     for col in REGRESSOR_COLS:
@@ -566,6 +561,19 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
             'ds', 'yhat', 'y', 'product', 'type', 'percentage_error', 'time_period'
         ])
 
+    # Per-day is_imputed flag (True iff every row that day was imputed).
+    # Used below to (a) leave imputed days in the training set with
+    # reduced weight, and (b) leave imputation alone in the share
+    # calculation. If the input df has no `is_imputed` column (older
+    # callers, eval harness without the flag), default to all-real.
+    if 'is_imputed' in df.columns:
+        day_imp = df.groupby('date')['is_imputed'].agg(lambda s: bool(s.all()))
+        total_daily['is_imputed'] = (
+            total_daily['ds'].dt.normalize().map(day_imp.to_dict()).fillna(False).astype(bool)
+        )
+    else:
+        total_daily['is_imputed'] = False
+
     # Drop early-close / partial-day outliers before training. Real
     # closure days (qty == 0) never appear in the join; what DOES make
     # it through are days where the cafe opened briefly — e.g. Sep 24,
@@ -578,15 +586,26 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     # Per-weekday threshold: anything below 30% of that weekday's
     # MEDIAN is treated as a partial-day outlier. Median (not mean)
     # so a single low day can't drag the threshold down with it.
+    #
+    # IMPORTANT: holiday days are exempt. A genuine low-demand holiday
+    # (e.g. Eid al-Fitr day 1, when most of Riyadh is at home) looks
+    # like an outlier by this rule but is signal, not noise. Dropping
+    # it leaves the holiday regressor with no observation to fit
+    # against, so the coefficient stays near its prior and Eid family
+    # forecasts under-predict by ~50 %.
     total_daily['__dow'] = total_daily['ds'].dt.day_name()
+    total_daily['__occ'] = total_daily['ds'].apply(compute_occasion)
     dow_median = total_daily.groupby('__dow')['y'].transform('median')
-    outlier_mask = total_daily['y'] < (dow_median * 0.30)
+    outlier_mask = (
+        (total_daily['y'] < (dow_median * 0.30))
+        & (total_daily['__occ'] == 'Normal')
+    )
     if outlier_mask.any():
         n = int(outlier_mask.sum())
         sample = total_daily.loc[outlier_mask, ['ds', 'y']].head(5).to_dict('records')
         print(f"[outlier] dropping {n} early-close days from training: {sample}")
         total_daily = total_daily.loc[~outlier_mask].reset_index(drop=True)
-    total_daily = total_daily.drop(columns=['__dow'])
+    total_daily = total_daily.drop(columns=['__dow', '__occ'])
 
     total_daily['season'] = total_daily['ds'].apply(compute_season)
     total_daily = _attach_regressors(total_daily)
@@ -596,21 +615,34 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         total_daily['ds'].max() + pd.Timedelta(days=horizon_days),
     )
 
+    # Weight imputed days less. Imputed rows have ¼ the variance of
+    # real days (std 21 vs 86 in the v4 dataset) — Prophet weighting
+    # them equally pulled the trend and weekly seasonality toward a
+    # flat 170-251 band, washing out genuine signal. Prophet doesn't
+    # accept per-row weights directly, so we encode weights as row
+    # multiplicity: real days appear 3× per fit, imputed days 1×. The
+    # ratio is the report's recommended 0.3 (1/3 ≈ 0.33).
+    def _weighted(daily: pd.DataFrame) -> pd.DataFrame:
+        reps = np.where(daily['is_imputed'].values, 1, 3)
+        return daily.loc[daily.index.repeat(reps)].reset_index(drop=True)
+
+    fit_cols = ['ds', 'y'] + REGRESSOR_COLS
+
     # ── 80/20 split for MAE diagnostic only ──────────────────────────────
     split = int(len(total_daily) * 0.8)
     if split < len(total_daily):
         try:
             eval_model = _build_prophet(holidays_df)
-            eval_model.fit(total_daily.iloc[:split][['ds', 'y'] + REGRESSOR_COLS])
+            eval_model.fit(_weighted(total_daily.iloc[:split])[fit_cols])
             test_pred = eval_model.predict(total_daily.iloc[split:][['ds'] + REGRESSOR_COLS])
             mae = mean_absolute_error(total_daily.iloc[split:]['y'], test_pred['yhat'])
             print(f"MAE (Test) — total daily sales: {round(mae, 2)}")
         except Exception as e:
             print(f"MAE eval skipped: {e}")
 
-    # ── Production model: fit on FULL data ───────────────────────────────
+    # ── Production model: fit on FULL data (weighted) ───────────────────
     model = _build_prophet(holidays_df)
-    model.fit(total_daily[['ds', 'y'] + REGRESSOR_COLS])
+    model.fit(_weighted(total_daily)[fit_cols])
 
     future_dates = pd.date_range(
         start=total_daily['ds'].min(),
@@ -648,6 +680,12 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     # year, so a December forecast got the same product mix as an August
     # one — which is why Hot Spanish Latte (a winter staple in Saudi
     # cafés) was getting near-zero predictions in December.
+    # Denominator groups by (season, dow) — NOT (season, dow, time_period)
+    # — so the share represents "fraction of (season, dow) demand for
+    # this (product, time_period) cell". Summing share across the joint
+    # (product × time_period) axis equals 1.0; multiplying by Prophet's
+    # daily yhat then disaggregating produces a daily total that matches
+    # yhat instead of inflating it 4× (one per time-period bucket).
     pivot_num = (
         df.groupby(['name', 'season', 'dow', 'time_period'])['quantity']
         .sum()
@@ -655,12 +693,12 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         .rename(columns={'quantity': 'product_qty'})
     )
     pivot_den = (
-        df.groupby(['season', 'dow', 'time_period'])['quantity']
+        df.groupby(['season', 'dow'])['quantity']
         .sum()
         .reset_index()
         .rename(columns={'quantity': 'total_qty'})
     )
-    share = pivot_num.merge(pivot_den, on=['season', 'dow', 'time_period'])
+    share = pivot_num.merge(pivot_den, on=['season', 'dow'])
     share['fraction'] = np.where(
         share['total_qty'] > 0,
         share['product_qty'] / share['total_qty'],
@@ -714,6 +752,18 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
         full_grid['fraction'] > 0,
         full_grid['fraction'],
         fallback,
+    )
+
+    # Normalize per date so the (product × time_period) cells for any
+    # given forecast day sum to exactly 1.0. The observed share now
+    # sums to 1.0 within (season, dow), but mixing observed cells with
+    # fallback cells on the same date can leave the per-day total off
+    # by ~10-20 %. This guarantees Σ yhat_value = Prophet's daily yhat.
+    day_totals = full_grid.groupby('ds')['fraction'].transform('sum')
+    full_grid['fraction'] = np.where(
+        day_totals > 0,
+        full_grid['fraction'] / day_totals,
+        full_grid['fraction'],
     )
 
     full_grid['yhat_value'] = (full_grid['yhat'] * full_grid['fraction']).clip(lower=0)

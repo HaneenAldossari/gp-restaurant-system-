@@ -26,6 +26,7 @@ SELECT
     o.time_period         AS time_period,
     o.season              AS season,
     o.occasion            AS occasion,
+    o.is_imputed          AS is_imputed,
     u.is_synthetic        AS is_synthetic
 FROM order_items oi
 JOIN orders     o ON oi.order_id    = o.id
