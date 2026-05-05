@@ -24,51 +24,42 @@ from routes_auth import router as auth_router
 from routes_team import router as team_router
 
 
-def _ensure_schema_and_seed() -> None:
-    """Create tables + seed teammate workspaces if the DB is empty.
+def _fast_schema_setup() -> None:
+    """Cheap, fast operations that MUST run before traffic is served:
+    create tables on a fresh DB, run idempotent column migrations, and
+    seed the teammate user accounts. Total cost: a few hundred ms.
 
-    Runs once at startup. In local dev this is a no-op after the first boot
-    (the `users` check short-circuits). On a freshly provisioned hosted DB
-    (Render, Railway), it bootstraps the entire schema and inserts the
-    teammate accounts so the app is usable immediately after deployment
-    without any manual psql session.
+    The slow stuff (auto-seeding the 60K-row sample dataset for each
+    workspace) is deferred to a background thread by `_async_seed`
+    below — that work would otherwise take 2–3 minutes and exceed
+    Render's port-detection timeout, causing the deploy to be
+    cancelled even though the application is healthy.
     """
     engine = get_engine()
     schema_path = Path(__file__).parent / "schema.sql"
     try:
         with engine.connect() as conn:
             existing = conn.execute(
-                text(
-                    "SELECT to_regclass('public.users')"
-                )
+                text("SELECT to_regclass('public.users')")
             ).scalar()
         if existing is None and schema_path.exists():
             log.info("Bootstrapping empty database from schema.sql")
             sql = schema_path.read_text()
             with engine.begin() as conn:
-                # Run statements one-by-one so a stray comment/blank chunk
-                # doesn't kill the whole script.
                 for statement in [s.strip() for s in sql.split(";")]:
                     if statement:
                         conn.execute(text(statement))
             log.info("Schema created.")
 
-        # Idempotent migrations for existing databases — runs every
-        # startup, safe to repeat. Add new columns / indexes here as
-        # the schema evolves so deployed Render Postgres stays in sync
-        # without manual psql sessions.
+        # Idempotent migrations — quick. Adds columns, drops orphan
+        # legacy upload rows. Completes in milliseconds even on a
+        # populated database.
         try:
             with engine.begin() as conn:
                 conn.execute(text("""
                     ALTER TABLE uploads
                     ADD COLUMN IF NOT EXISTS is_synthetic BOOLEAN NOT NULL DEFAULT FALSE
                 """))
-                # Drop ANY pre-existing auto-load uploads so the
-                # current seed structure takes over on next login.
-                # Covers three historical labels: the original
-                # single-row label, and the two-row split we briefly
-                # shipped (real days + imputed days). Cascades to
-                # orders + order_items via the FK on `uploads`.
                 conn.execute(text("""
                     DELETE FROM uploads
                     WHERE filename IN (
@@ -80,31 +71,46 @@ def _ensure_schema_and_seed() -> None:
         except Exception as e:
             log.warning("Schema migration skipped: %s", e)
 
-        # Seed teammate users (idempotent — uses ON CONFLICT DO NOTHING)
+        # Seed teammate accounts — also fast (5 ON-CONFLICT inserts).
         try:
             from seed_users import seed as _seed
             _seed()
         except Exception as e:
             log.warning("Skipping user seed: %s", e)
-        # Pre-load a synthetic sample dataset into every workspace that
-        # doesn't have data yet. Lets teammates open the deployed app
-        # and immediately see forecasts / dashboard / menu insights.
-        # They can delete it from Settings → Upload Data and replace
-        # with their own file.
-        try:
-            from seed_sample_data import seed_all_users as _seed_samples
-            _seed_samples()
-        except Exception as e:
-            log.warning("Skipping sample-data seed: %s", e)
-        # NOTE: We previously pre-warmed Prophet caches at startup, but
-        # each training takes ~250MB and Render free tier only has 512MB
-        # total — multi-user pre-warm OOM-killed the worker repeatedly.
-        # Caches are now built lazily on first request per user. The
-        # frontend handles the ~50s first-call latency with a longer
-        # timeout and a friendly "this can take up to a minute" message.
     except Exception as e:
-        # Don't crash the app if seeding fails — health endpoint still works
-        log.error("Schema/seed bootstrap failed: %s", e)
+        log.error("Schema setup failed: %s", e)
+
+
+def _async_seed() -> None:
+    """Slow auto-seed of the 5.7 MB sample dataset for every workspace
+    that doesn't already have data. Runs in a daemon thread spawned
+    AFTER the FastAPI app reports ready, so Render's port scanner sees
+    the port bound immediately and the deploy succeeds. The seed
+    typically finishes within 2–3 minutes; until then, any user that
+    logs in early just sees an empty dashboard for a moment.
+
+    Idempotent — `seed_sample_for_user` short-circuits on workspaces
+    that already have order_items, so this thread is also safe to run
+    on a normal restart with data already in the DB.
+    """
+    try:
+        from seed_sample_data import seed_all_users as _seed_samples
+        log.info("Background sample-data seed: starting")
+        _seed_samples()
+        log.info("Background sample-data seed: complete")
+    except Exception as e:
+        log.warning("Background sample-data seed failed: %s", e)
+
+
+def _ensure_schema_and_seed() -> None:
+    """Synchronous wrapper called once during FastAPI startup. Does the
+    fast work inline and kicks the slow work off in a background daemon
+    thread. The startup hook returns in milliseconds so Render's port
+    scanner detects the bound port immediately.
+    """
+    _fast_schema_setup()
+    import threading
+    threading.Thread(target=_async_seed, daemon=True, name="sample-seed").start()
 
 
 app = FastAPI(
