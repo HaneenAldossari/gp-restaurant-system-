@@ -1415,6 +1415,22 @@ def forecast_total(
     )
     per_item["category"] = per_item["product"].map(_category_lookup.get(user_id, {}))
 
+    # Pull historical per-product totals so the watch list only shows
+    # items that are genuinely on the active menu. Without this filter,
+    # the list surfaces products that sold once or twice in the entire
+    # training year (e.g., 'Morning Waffle' = 1 unit/year, 'Black Tea
+    # 1L pot' = 1 unit/year) — those are essentially-discontinued
+    # SKUs and showing them as "predicted 1 unit" reads as a bug to
+    # the manager. Threshold of 30 units/year (~1 every 12 days) marks
+    # the boundary between "active slow mover" and "barely on menu".
+    hist_df = load_data(user_id, include_synthetic=False)
+    hist_totals = (
+        hist_df.groupby("Product")["Quantity"].sum().to_dict()
+        if not hist_df.empty else {}
+    )
+    per_item["historicalUnits"] = per_item["product"].map(hist_totals).fillna(0).astype(int)
+    HIST_MIN_UNITS = 30
+
     seasonality = _seasonality_profile(user_id)
 
     def _enrich(row) -> dict:
@@ -1424,14 +1440,20 @@ def forecast_total(
             "name": name,
             "category": row["category"] or "—",
             "totalPredictedQuantity": int(row["totalPredictedQuantity"]),
+            "historicalUnits": int(row.get("historicalUnits", 0)),
             "seasonal": seasonal,  # None or {isSeasonal, peakSeasons, label, ...}
         }
 
     top_items = [_enrich(r) for _, r in per_item.head(5).iterrows()]
-    # Bottom 5 — "worst sellers" worth watching. Filter on the integer
-    # display value (>=1 unit) so we don't surface items that round to 0
-    # and look like a display bug.
-    bottom_candidates = per_item[per_item["totalPredictedQuantity"] >= 1.0]
+    # Bottom 5 — slow movers worth watching. Filter requires BOTH:
+    # (a) forecast >= 1 unit so we don't surface zero-prediction
+    #     rounding artefacts, AND
+    # (b) historical total >= HIST_MIN_UNITS so we don't surface
+    #     barely-sold-ever items that look like model error.
+    bottom_candidates = per_item[
+        (per_item["totalPredictedQuantity"] >= 1.0)
+        & (per_item["historicalUnits"] >= HIST_MIN_UNITS)
+    ]
     bottom_items = [_enrich(r) for _, r in bottom_candidates.tail(5).iloc[::-1].iterrows()]
 
     daily_totals = (
