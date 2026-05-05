@@ -13,10 +13,12 @@ def menu_engineering(
     end_date: str | None = Query(None),
     user_id: int = Depends(get_current_user_id),
 ):
-    # Boston Matrix popularity / margin should reflect REAL sales,
-    # not auto-seeded fill-in days — otherwise classifications could
-    # be skewed by synthetic patterns.
-    df = filter_data(load_data(user_id, include_synthetic=False), start_date, end_date)
+    # Use the full dataset (real + imputed). Items that only sell in
+    # specific seasons (e.g. summer) would otherwise be under-counted
+    # if the data-loss gaps fall in those seasons — leaving them out
+    # of the Boston Matrix would mis-classify them as Dogs purely
+    # because their selling season had data gaps.
+    df = filter_data(load_data(user_id), start_date, end_date)
 
     if df.empty:
         raise HTTPException(status_code=404, detail="No data for the selected filters")
@@ -549,7 +551,7 @@ def simulate_price_change(
     if new_cost is not None and new_cost < 0:
         raise HTTPException(status_code=400, detail="new_cost cannot be negative")
 
-    df = load_data(user_id, include_synthetic=False)
+    df = load_data(user_id)
     if df.empty:
         raise HTTPException(status_code=404, detail="No sales data available")
 
@@ -789,7 +791,7 @@ def simulate_bulk(
             detail="classification must be one of: Star, Plowhorse, Puzzle, Dog",
         )
 
-    df = load_data(user_id, include_synthetic=False)
+    df = load_data(user_id)
     if df.empty:
         raise HTTPException(status_code=404, detail="No sales data available")
 
