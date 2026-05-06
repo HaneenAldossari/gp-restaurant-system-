@@ -621,6 +621,14 @@ def run_forecast(df: pd.DataFrame, save_csv: bool = False, horizon_days: int = 3
     total_daily['__dow'] = total_daily['ds'].dt.day_name()
     total_daily['__occ'] = total_daily['ds'].apply(compute_occasion)
     dow_median = total_daily.groupby('__dow')['y'].transform('median')
+    # NOTE: an attempt to tighten this filter (exempt only real holidays
+    # via HOLIDAY_OCCASIONS, drop Weekend-labelled partial-closes Feb 19
+    # and Nov 26) was reverted after eval_prophet.py showed the change
+    # raised aggregate WAPE from 32.6% to 58.5% and Saturday MAE from
+    # 88.6 to 106.6. The two low-y Saturday observations apparently
+    # serve as variance anchors for Prophet's weekly seasonality fit;
+    # removing them collapsed the seasonal amplitude and made every
+    # DOW under-predict more. Keeping the broader 'Normal' gate.
     outlier_mask = (
         (total_daily['y'] < (dow_median * 0.30))
         & (total_daily['__occ'] == 'Normal')

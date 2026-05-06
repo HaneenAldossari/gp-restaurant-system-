@@ -440,6 +440,12 @@ def _bake_baseline_scale(
     if predictions.empty:
         return predictions
 
+    # NOTE: an attempt to anchor this rescaler to the trailing-8-week
+    # real-day mean (instead of full-history) was reverted after eval
+    # showed it shifted MBE from −10.6 to +25.5 without reducing MAE
+    # (108.8 → 109.5) or WAPE (58.8% → 59.2%). The level miss isn't the
+    # dominant error source — day-to-day variance is — so a single
+    # global multiplier can't help. Keeping the full-history anchor.
     data_days = (
         max(1, int((model_df["date"].max() - model_df["date"].min()).days) + 1)
     )
