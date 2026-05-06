@@ -1,4 +1,5 @@
 """Menu Engineering API — GET /api/menu-engineering"""
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import get_current_user_id
@@ -459,6 +460,7 @@ def _cost_lowering_suggestion(
     avg_margin: float,
     avg_pop: float,
     other_qty: float,
+    suggested_price: float | None = None,
 ) -> dict | None:
     """
     Suggest a unit-cost reduction when it's logically beneficial.
@@ -491,24 +493,41 @@ def _cost_lowering_suggestion(
     if current_margin >= 75:
         return None  # margin already strong; supplier negotiation has little to give
 
-    # Cost that would lift margin to the menu average
-    target_cost_for_avg_margin = current_price * (1 - avg_margin / 100)
+    # Reference price for the cost calculation. When the optimal-price
+    # routine returns a different price (e.g. a Plowhorse with a
+    # capped_down discount), the manager will likely apply BOTH the
+    # price change and the cost reduction together. Using the suggested
+    # price here means the "moves to <Classification>" claim is true
+    # under the combined scenario the manager is actually being shown.
+    # Falls back to current_price when no suggestion or when the
+    # suggested matches current.
+    ref_price = float(suggested_price) if (suggested_price and suggested_price > 0) else current_price
+
+    # Cost that would lift margin meaningfully past the menu average so
+    # the classification flips (Plowhorse → Star, Dog → Puzzle).
+    # Earlier versions used round() on the target, which sometimes
+    # left margin AT the average — same classification, no flip.
+    # math.floor() pushes one SAR more aggressive when the target
+    # lands on a fractional value, which is what unlocks the flip.
+    target_cost_for_avg_margin = ref_price * (1 - avg_margin / 100)
     # Realistic floor: don't suggest more than a 30% supplier discount
     realistic_floor = current_cost * 0.70
     suggested = max(target_cost_for_avg_margin, realistic_floor)
+    suggested = math.floor(suggested)
 
-    # Round to a clean SAR value so the suggestion sounds achievable
-    suggested = round(suggested)
     # Need at least a meaningful 5% reduction to be worth surfacing
     if suggested >= current_cost or (current_cost - suggested) / current_cost < 0.05:
         return None
 
     reduction_pct = (current_cost - suggested) / current_cost * 100
-    new_margin = (current_price - suggested) / current_price * 100
+    new_margin = (ref_price - suggested) / ref_price * 100
     pop = (current_qty / (other_qty + current_qty) * 100) if (other_qty + current_qty) > 0 else 0
     new_classification = _classify(pop, new_margin, avg_pop, avg_margin)
 
-    # Profit lift = savings per unit × historical units sold
+    # Profit lift = savings per unit × historical units sold (current
+    # price scenario). For the suggested-price scenario, qty would be
+    # different per elasticity, but the cost-saving lift stays the
+    # same dollar value — the per-unit savings × the units sold.
     additional_profit = (current_cost - suggested) * current_qty
 
     moves_class = new_classification != current_classification
@@ -778,6 +797,7 @@ def simulate_price_change(
             avg_margin=avg_margin,
             avg_pop=avg_pop,
             other_qty=other_qty,
+            suggested_price=suggested_price,
         )
 
         optimal.update({
