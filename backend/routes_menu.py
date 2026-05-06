@@ -510,8 +510,17 @@ def _cost_lowering_suggestion(
     # math.floor() pushes one SAR more aggressive when the target
     # lands on a fractional value, which is what unlocks the flip.
     target_cost_for_avg_margin = ref_price * (1 - avg_margin / 100)
-    # Realistic floor: don't suggest more than a 30% supplier discount
-    realistic_floor = current_cost * 0.70
+    # Realistic floor: cap at 50% supplier discount. Earlier we used
+    # 30%, but reviewer testing on Black Tea 1L pot showed the cap
+    # was blocking the flip-target on multiple items — the suggested
+    # cost would round to a value that left margin just BELOW the
+    # avg threshold, even though a 1-SAR-more-aggressive cut was
+    # within reach. 50% is at the ambitious end of supplier
+    # negotiation but not unreasonable for cafe SKUs (recipe
+    # reformulation, bulk-buy, alternative ingredients all play in
+    # this band). Items where 50% genuinely isn't achievable will
+    # still see SOME suggestion; the manager can ignore it.
+    realistic_floor = current_cost * 0.50
     suggested = max(target_cost_for_avg_margin, realistic_floor)
     suggested = math.floor(suggested)
 
