@@ -259,6 +259,7 @@ def _optimal_price(
     elasticity: float,
     current_price: float,
     classification: str | None = None,
+    current_qty: int = 0,
 ) -> dict | None:
     """
     Suggest a price using the constant-elasticity demand model:
@@ -304,32 +305,53 @@ def _optimal_price(
     #     removal. The product itself is the problem, not the price.
     is_elastic = elasticity < -1.05
 
+    # Helper: does a candidate discount actually lift projected profit
+    # vs the current price? Elastic SKUs with high cost-ratio (cost
+    # close to price) can have volume gain that doesn't outpace the
+    # per-unit margin shrinkage — for those items the textbook
+    # 'elastic Dog/Puzzle → discount' rule loses money. Reviewer
+    # caught this on Candy Cake (price 25, cost 11, e=-1.6, suggested
+    # 22 → projected profit drops by SAR 3). Gate the discount on
+    # actual profit math instead of just the elasticity sign.
+    def _discount_increases_profit(suggested_price: float) -> bool:
+        if suggested_price <= 0 or current_price <= 0:
+            return False
+        new_qty = _project_qty_float(current_qty, current_price, suggested_price, elasticity)
+        new_profit = new_qty * (suggested_price - cost)
+        old_profit = current_qty * (current_price - cost)
+        return new_profit > old_profit
+
     if classification == "Dog":
         if is_elastic:
             suggested = max(int(round(current_price * 0.90)), int(math.ceil(cost * 1.20)))
             if suggested >= int(round(current_price)):
                 suggested = int(round(current_price)) - 1
             suggested = max(suggested, int(math.ceil(cost * 1.05)))  # keep a minimum margin
-            return {
-                "price": suggested,
-                "kind": "dog_discount",
-                "rationale": (
-                    "This item is elastic and underperforming — a small discount may pick "
-                    "up enough demand to lift profit. If it still doesn't move after a "
-                    "two-week test, consider replacing it on the menu."
-                ),
-                "inelastic": False,
-            }
-        # Inelastic Dog: no price move recommended.
+            if _discount_increases_profit(suggested):
+                return {
+                    "price": suggested,
+                    "kind": "dog_discount",
+                    "rationale": (
+                        "This item is elastic and underperforming — a small discount may pick "
+                        "up enough demand to lift profit. If it still doesn't move after a "
+                        "two-week test, consider replacing it on the menu."
+                    ),
+                    "inelastic": False,
+                }
+            # Discount LOSES money on this item even though it's
+            # nominally elastic — fall through to hold + cost-lever.
+        # Inelastic Dog (or elastic-but-discount-doesn't-help): no
+        # price move recommended; cost reduction is the practical lever
+        # and the blue panel surfaces it inline.
         return {
             "price": int(round(current_price)),
             "kind": "dog_remove",
             "rationale": (
-                "This item is underperforming AND demand here is price-insensitive — "
-                "discounting won't lift volume enough to be worth the margin hit, and "
-                "raising the price will hurt the few sales it does have. "
-                "Better moves: rework the recipe, change positioning on the menu, or "
-                "replace it with something else."
+                "This item is underperforming and the demand math says a discount wouldn't "
+                "lift volume enough to be worth the margin hit (cost is too close to price). "
+                "Raising the price would hurt the few sales it does have. The practical lever "
+                "here is cost — bring it down via supplier negotiation or a recipe review, or "
+                "consider replacing the item if neither is possible."
             ),
             "inelastic": True,
         }
@@ -339,16 +361,20 @@ def _optimal_price(
             suggested = max(int(round(current_price * 0.92)), int(math.ceil(cost * 1.30)))
             if suggested >= int(round(current_price)):
                 suggested = int(round(current_price)) - 1
-            return {
-                "price": suggested,
-                "kind": "puzzle_discount",
-                "rationale": (
-                    "Strong margin, low sales, and demand is price-sensitive — a small "
-                    "discount should attract enough new customers to make up the margin "
-                    "give-up. Pair with a menu feature or combo to drive visibility."
-                ),
-                "inelastic": False,
-            }
+            if _discount_increases_profit(suggested):
+                return {
+                    "price": suggested,
+                    "kind": "puzzle_discount",
+                    "rationale": (
+                        "Strong margin, low sales, and demand is price-sensitive — a small "
+                        "discount should attract enough new customers to make up the margin "
+                        "give-up. Pair with a menu feature or combo to drive visibility."
+                    ),
+                    "inelastic": False,
+                }
+            # Discount doesn't help on this Puzzle either — fall
+            # through to the visibility + price-test path, same as
+            # inelastic Puzzle, since price isn't the productive lever.
         # Inelastic Puzzle: discount would destroy profit. Test a small
         # price *increase* and push visibility instead — the issue is
         # awareness, not price.
@@ -712,6 +738,7 @@ def simulate_price_change(
     current_classification = _classify(current_pop, current_margin, avg_pop, avg_margin)
     optimal = _optimal_price(
         effective_cost, elasticity_central, current_price, current_classification,
+        current_qty=current_qty,
     )
 
     # Enrich the suggestion with the projected classification transition
