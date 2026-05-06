@@ -443,23 +443,27 @@ def _cost_lowering_suggestion(
 
       - Current cost > 1 SAR (anything tiny leaves no negotiation room).
       - Current margin < 75% (already-very-profitable items don't need it).
-      - Classification is NOT "Puzzle". A Puzzle's bottleneck is demand, not
-        margin; pushing margin higher there is bike-shedding the wrong axis.
-        For Stars/Plowhorses/Dogs, lower cost is always a win.
       - There's a realistic 5–30% reduction the supplier negotiation /
         recipe-tweak / bulk-buy could plausibly achieve.
 
     Target cost is whatever brings margin up to the menu average — that's
     the cleanest classification break (Plowhorse → Star, Dog → Puzzle).
     Capped at a 30% reduction so we don't suggest unrealistic supplier wins.
+
+    Earlier versions excluded Puzzles on the rationale that a Puzzle's
+    bottleneck is demand, not margin. Reviewer feedback (and the test
+    case of an avocado item) clarified that managers want to see the
+    cost option for Hidden gems too — sales are already low, so any
+    "free" margin lift compounds with the visibility/price-test
+    strategy. The margin-already-high cutoff still gates inappropriate
+    suggestions on the items where supplier negotiation has nothing
+    left to give (e.g. avocado at 87 % margin won't trigger this).
     """
     if current_price <= 0 or current_cost < 1:
         return None
     current_margin = (current_price - current_cost) / current_price * 100
     if current_margin >= 75:
         return None  # margin already strong; supplier negotiation has little to give
-    if current_classification == "Puzzle":
-        return None  # demand-limited, not margin-limited
 
     # Cost that would lift margin to the menu average
     target_cost_for_avg_margin = current_price * (1 - avg_margin / 100)
