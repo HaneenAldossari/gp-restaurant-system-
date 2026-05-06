@@ -779,8 +779,12 @@ def simulate_price_change(
         })
 
     current_classification = _classify(current_pop, current_margin, avg_pop, avg_margin)
+    # Recommendations anchor on the item's actual stored cost, not the
+    # slider's effective_cost — otherwise dragging cost down rebuilds the
+    # price suggestion against the hypothetical lowered cost and the blue
+    # panel contradicts itself as the user explores.
     optimal = _optimal_price(
-        effective_cost, elasticity_central, current_price, current_classification,
+        current_cost, elasticity_central, current_price, current_classification,
         current_qty=current_qty,
     )
 
