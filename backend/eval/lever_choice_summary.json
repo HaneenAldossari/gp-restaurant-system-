@@ -1,0 +1,31 @@
+{
+  "totalItems": 129,
+  "correct": 90,
+  "wrong": 39,
+  "byClassification": {
+    "Dog": {
+      "n": 44,
+      "correct": 44,
+      "wrong": 0
+    },
+    "Plowhorse": {
+      "n": 16,
+      "correct": 9,
+      "wrong": 7
+    },
+    "Puzzle": {
+      "n": 33,
+      "correct": 14,
+      "wrong": 19
+    },
+    "Star": {
+      "n": 36,
+      "correct": 23,
+      "wrong": 13
+    }
+  },
+  "thresholds": {
+    "avgPopCutoff": 0.5426356589147286,
+    "avgMargin": 74.67036823791507
+  }
+}

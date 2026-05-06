@@ -184,6 +184,82 @@ DEFAULT_ELASTICITY = -1.5
 ELASTICITY_UNCERTAINTY = 0.30  # ±30%
 
 
+# How much of the unit cost a serious supplier-negotiation / bulk-buy / recipe
+# tweak can plausibly remove. Calibrated per category, because the room differs
+# by ingredient profile:
+#   • Many ingredients + recipe flexibility (sweets, bakery) → wider room
+#   • Commodity-priced ingredients (coffee beans, tea leaves) → narrow room
+#   • Specialty SKUs whose origin/grade customers notice (pour-over) → narrow
+# Same lookup style as ELASTICITY_BY_CATEGORY: exact key → partial match → default.
+COST_REDUCTION_CAP_BY_CATEGORY: dict[str, float] = {
+    # --- Sweets & desserts (lots of ingredients, decoration grades, recipe room) ---
+    "sweets": 0.60, "desserts": 0.60, "dessert": 0.60,
+    "cakes": 0.60, "cake": 0.60, "cheesecakes": 0.60, "cheesecake": 0.60,
+    "cupcakes": 0.60, "pies": 0.60, "tarts": 0.60,
+    "candy": 0.60, "chocolates": 0.60, "confectionery": 0.60,
+    "ice cream": 0.55, "gelato": 0.55, "frozen desserts": 0.55, "sorbet": 0.55,
+    "hot sweets": 0.60, "waffles": 0.60, "waffle": 0.60, "pancakes": 0.60,
+    "crepes": 0.60, "french toast": 0.55,
+    "cookies": 0.55, "brownies": 0.55, "puddings": 0.55, "custards": 0.55,
+    # --- Bakery (flour/butter/sugar with recipe + portion flexibility) ---
+    "bakery": 0.55, "bread": 0.50, "breads": 0.50, "baked goods": 0.55,
+    "pastries": 0.55, "pastry": 0.55, "croissants": 0.55, "croissant": 0.55,
+    "muffins": 0.55, "muffin": 0.55, "scones": 0.55, "donuts": 0.55, "bagels": 0.50,
+    # --- Cold drinks (fresh fruit + syrups; supplier switching common) ---
+    "cold drinks": 0.55, "cold beverages": 0.55, "beverages": 0.55, "drinks": 0.55,
+    "juices": 0.55, "juice": 0.55, "fresh juice": 0.55,
+    "smoothies": 0.55, "milkshakes": 0.55, "shakes": 0.55,
+    "soft drinks": 0.45, "sodas": 0.45, "soda": 0.45,
+    "energy drinks": 0.40, "mocktails": 0.55,
+    "water": 0.30, "mineral water": 0.30, "bottled water": 0.30,
+    # --- Cold coffee (bean + milk + syrup mix) ---
+    "cold coffee drinks": 0.50, "iced coffee": 0.50, "cold coffee": 0.50,
+    "frappe": 0.50, "frappes": 0.50, "frappuccino": 0.50,
+    # --- Espresso drinks (commodity beans + small milk) ---
+    "espresso drinks": 0.40, "espresso": 0.40, "specialty coffee": 0.40,
+    "coffee": 0.40, "hot coffee": 0.40, "americano": 0.40,
+    # --- Hot drinks (tea/coffee already commodity-priced) ---
+    "hot drinks": 0.40, "hot beverages": 0.40,
+    "tea": 0.35, "hot tea": 0.35, "herbal tea": 0.40, "matcha": 0.45,
+    "hot chocolate": 0.50, "chocolate drinks": 0.50,
+    "saudi coffee": 0.40, "turkish coffee": 0.40, "arabic coffee": 0.40,
+    # --- Pour-over / dripp (specialty origin matters; less room) ---
+    "filter coffee": 0.35, "drip coffee": 0.35, "dripp coffee drinks": 0.35,
+    # --- Savory mains (proteins are the cost driver; some sourcing room) ---
+    "savory": 0.45, "mains": 0.45, "main course": 0.45, "entrees": 0.45, "meals": 0.45,
+    "sandwiches": 0.50, "sandwich": 0.50, "paninis": 0.50, "panini": 0.50,
+    "wraps": 0.50, "wrap": 0.50, "subs": 0.50,
+    "burgers": 0.45, "burger": 0.45, "sliders": 0.45,
+    "pizza": 0.55, "pizzas": 0.55, "flatbread": 0.55,
+    "pasta": 0.55, "pastas": 0.55, "noodles": 0.55,
+    "salads": 0.50, "salad": 0.50,
+    "soups": 0.55, "soup": 0.55, "broths": 0.55,
+    "breakfast": 0.50, "brunch": 0.50, "breakfast items": 0.50,
+    "appetizers": 0.55, "starters": 0.55, "sides": 0.55, "finger food": 0.55,
+}
+
+# Catch-all when no category-specific rate matches: 50% reduction (the
+# previous uniform default). Conservative middle ground.
+DEFAULT_COST_REDUCTION_CAP = 0.50
+
+
+def _cost_reduction_cap_for(category: str | None) -> float:
+    """
+    Maximum fraction of the unit cost that supplier negotiation, bulk-buy,
+    or a recipe tweak can plausibly remove. Same lookup pattern as
+    `_elasticity_for`: exact match → partial keyword match → default.
+    """
+    if not category:
+        return DEFAULT_COST_REDUCTION_CAP
+    key = str(category).strip().lower()
+    if key in COST_REDUCTION_CAP_BY_CATEGORY:
+        return COST_REDUCTION_CAP_BY_CATEGORY[key]
+    for known_key, value in COST_REDUCTION_CAP_BY_CATEGORY.items():
+        if known_key in key or key in known_key:
+            return value
+    return DEFAULT_COST_REDUCTION_CAP
+
+
 def _elasticity_for(category: str | None) -> tuple[float, str]:
     """
     Return (elasticity, human_readable_source) for the given category name.
@@ -261,6 +337,7 @@ def _optimal_price(
     current_price: float,
     classification: str | None = None,
     current_qty: int = 0,
+    avg_margin: float = 0.0,
 ) -> dict | None:
     """
     Suggest a price using the constant-elasticity demand model:
@@ -443,6 +520,43 @@ def _optimal_price(
             "high enough to hold margin, low enough to keep customers buying."
         )
 
+    # Star protection: don't recommend a price drop that demotes a Hero.
+    # The elasticity math may say a cut lifts profit, but Stars are
+    # positioning assets — exchanging Hero status for a short-term
+    # margin trade is bad menu engineering. If the suggested price is
+    # below current AND would push margin under the menu average
+    # (the boundary that defines Star vs Plowhorse), hold instead.
+    # The cost lever (if available) will surface via the lever-choice
+    # rule on the recommendation panel.
+    if classification == "Star" and suggested < current_price and avg_margin > 0:
+        new_margin_at_suggested = (suggested - cost) / suggested * 100 if suggested > 0 else 0
+        if new_margin_at_suggested < avg_margin:
+            # Threshold price: the lowest price where margin still
+            # equals avg_margin. Any cut below this demotes the Star
+            # to Plowhorse. Solve (P - cost)/P = avg_margin/100
+            #   → P = cost / (1 - avg_margin/100)
+            avg_margin_frac = avg_margin / 100
+            demotion_price = (
+                cost / (1 - avg_margin_frac)
+                if avg_margin_frac < 1 and avg_margin_frac > 0
+                else current_price
+            )
+            return {
+                "price": int(round(current_price)),
+                "kind": "star_protect",
+                "demotionPrice": round(demotion_price, 2),
+                "demotedTo": "Plowhorse",
+                "rationale": (
+                    "This is a Hero item — high sales and healthy margin. The math "
+                    "shows a small price cut could lift short-term profit, but it "
+                    "would push the margin below the menu average and demote this "
+                    "item out of Hero status. Hold the price. If you need more "
+                    "profit from this item, the cost lever (supplier negotiation, "
+                    "recipe review) is the right move."
+                ),
+                "inelastic": False,
+            }
+
     return {
         "price": int(round(suggested)),
         "theoreticalPrice": int(round(theoretical)),
@@ -461,6 +575,7 @@ def _cost_lowering_suggestion(
     avg_pop: float,
     other_qty: float,
     suggested_price: float | None = None,
+    category: str | None = None,
 ) -> dict | None:
     """
     Suggest a unit-cost reduction when it's logically beneficial.
@@ -507,23 +622,30 @@ def _cost_lowering_suggestion(
     ref_price = float(suggested_price) if (suggested_price and suggested_price > 0) else current_price
 
     target_cost_for_avg_margin = ref_price * (1 - avg_margin / 100)
-    # Realistic floor: cap at 50% supplier discount.
-    realistic_floor = current_cost * 0.50
+    # Realistic floor: cap depends on the category. Sweets and bakery
+    # have wider supplier-negotiation / recipe-swap room; commodity
+    # items like tea and espresso beans have very little. See
+    # COST_REDUCTION_CAP_BY_CATEGORY.
+    cap_pct = _cost_reduction_cap_for(category)
+    realistic_floor = current_cost * (1 - cap_pct)
 
+    # Round suggestions to the nearest 0.5 SAR. Whole-rial rounding was
+    # too coarse for low-cost items (Ginger Milk at 1.69 SAR — ceil()
+    # rounded the floor up past current cost and dropped the suggestion
+    # entirely). Half-rial steps are still clean to communicate
+    # ("negotiate from 1.69 to 1.50") without false precision.
     if target_cost_for_avg_margin < current_cost:
         # Item below avg margin — target avg margin so the
         # classification can flip (Plowhorse → Star, Dog → Puzzle).
-        # Floor() pushes one SAR more aggressive, which unlocks the
-        # flip when the target lands on a fractional value.
         suggested_raw = max(target_cost_for_avg_margin, realistic_floor)
-        suggested = math.floor(suggested_raw)
+        suggested = math.floor(suggested_raw * 2) / 2
     else:
         # Item already at/above avg margin — no classification flip
         # possible via cost (margin axis is already on the high side),
         # but cost reduction still lifts profit. Suggest the realistic
-        # floor (max 50% off) as the supplier-negotiation target,
-        # using ceil() so we never claim more than the cap allows.
-        suggested = math.ceil(realistic_floor)
+        # floor as the supplier-negotiation target, using ceil() so we
+        # never claim more savings than the category cap allows.
+        suggested = math.ceil(realistic_floor * 2) / 2
 
     # Need at least a meaningful 5% reduction to be worth surfacing
     if suggested >= current_cost or (current_cost - suggested) / current_cost < 0.05:
@@ -568,7 +690,7 @@ def _cost_lowering_suggestion(
 
     return {
         "currentCost": round(current_cost, 2),
-        "suggestedCost": int(suggested),
+        "suggestedCost": round(suggested, 2),
         "reductionPct": round(reduction_pct, 1),
         "additionalProfit": round(additional_profit, 2),
         "currentClassification": current_classification,
@@ -786,6 +908,7 @@ def simulate_price_change(
     optimal = _optimal_price(
         current_cost, elasticity_central, current_price, current_classification,
         current_qty=current_qty,
+        avg_margin=avg_margin,
     )
 
     # Enrich the suggestion with the projected classification transition
@@ -793,9 +916,14 @@ def simulate_price_change(
     # direction label so the UI doesn't have to infer it from `kind`.
     if optimal:
         suggested_price = float(optimal["price"])
+        # Recommendation enrichment uses current_cost — projectedProfit /
+        # projectedMargin / newClassification describe "what happens if
+        # you take the recommended action against the item AS-IS". They
+        # must not move with the slider, otherwise priceLift changes as
+        # the user explores and the lever-choice flips mid-interaction.
         suggested_sim = _simulate_one(
             current_price, current_cost, current_qty,
-            suggested_price, effective_cost, elasticity_central,
+            suggested_price, current_cost, elasticity_central,
             other_qty, avg_pop, avg_margin,
         )
         # Direction: compare against current price (rounded to match what
@@ -826,6 +954,7 @@ def simulate_price_change(
             avg_pop=avg_pop,
             other_qty=other_qty,
             suggested_price=suggested_price,
+            category=str(t["category"]),
         )
 
         optimal.update({
