@@ -490,39 +490,40 @@ def _cost_lowering_suggestion(
     if current_price <= 0 or current_cost < 1:
         return None
     current_margin = (current_price - current_cost) / current_price * 100
-    if current_margin >= 75:
-        return None  # margin already strong; supplier negotiation has little to give
+
+    # Earlier versions early-returned when current_margin >= 75% on
+    # the rationale that 'supplier negotiation has little to give' for
+    # already-high-margin items. Reviewer testing on Avocado (87%
+    # margin) flagged this — even on a high-margin item the cost can
+    # still be negotiated down, and the profit lift on a popular SKU
+    # is substantial. Lifted the gate; the realistic-floor cap below
+    # plus the 5%-minimum-reduction check still bound inappropriate
+    # suggestions.
 
     # Reference price for the cost calculation. When the optimal-price
     # routine returns a different price (e.g. a Plowhorse with a
     # capped_down discount), the manager will likely apply BOTH the
-    # price change and the cost reduction together. Using the suggested
-    # price here means the "moves to <Classification>" claim is true
-    # under the combined scenario the manager is actually being shown.
-    # Falls back to current_price when no suggestion or when the
-    # suggested matches current.
+    # price change and the cost reduction together.
     ref_price = float(suggested_price) if (suggested_price and suggested_price > 0) else current_price
 
-    # Cost that would lift margin meaningfully past the menu average so
-    # the classification flips (Plowhorse → Star, Dog → Puzzle).
-    # Earlier versions used round() on the target, which sometimes
-    # left margin AT the average — same classification, no flip.
-    # math.floor() pushes one SAR more aggressive when the target
-    # lands on a fractional value, which is what unlocks the flip.
     target_cost_for_avg_margin = ref_price * (1 - avg_margin / 100)
-    # Realistic floor: cap at 50% supplier discount. Earlier we used
-    # 30%, but reviewer testing on Black Tea 1L pot showed the cap
-    # was blocking the flip-target on multiple items — the suggested
-    # cost would round to a value that left margin just BELOW the
-    # avg threshold, even though a 1-SAR-more-aggressive cut was
-    # within reach. 50% is at the ambitious end of supplier
-    # negotiation but not unreasonable for cafe SKUs (recipe
-    # reformulation, bulk-buy, alternative ingredients all play in
-    # this band). Items where 50% genuinely isn't achievable will
-    # still see SOME suggestion; the manager can ignore it.
+    # Realistic floor: cap at 50% supplier discount.
     realistic_floor = current_cost * 0.50
-    suggested = max(target_cost_for_avg_margin, realistic_floor)
-    suggested = math.floor(suggested)
+
+    if target_cost_for_avg_margin < current_cost:
+        # Item below avg margin — target avg margin so the
+        # classification can flip (Plowhorse → Star, Dog → Puzzle).
+        # Floor() pushes one SAR more aggressive, which unlocks the
+        # flip when the target lands on a fractional value.
+        suggested_raw = max(target_cost_for_avg_margin, realistic_floor)
+        suggested = math.floor(suggested_raw)
+    else:
+        # Item already at/above avg margin — no classification flip
+        # possible via cost (margin axis is already on the high side),
+        # but cost reduction still lifts profit. Suggest the realistic
+        # floor (max 50% off) as the supplier-negotiation target,
+        # using ceil() so we never claim more than the cap allows.
+        suggested = math.ceil(realistic_floor)
 
     # Need at least a meaningful 5% reduction to be worth surfacing
     if suggested >= current_cost or (current_cost - suggested) / current_cost < 0.05:
