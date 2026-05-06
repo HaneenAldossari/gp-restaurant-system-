@@ -1,0 +1,320 @@
+{
+  "data": {
+    "n_rows": 60368,
+    "days_total": 339,
+    "days_real": 277,
+    "days_imputed": 62
+  },
+  "headline": "7/9 required checks PASS",
+  "all_passed": false,
+  "checks": {
+    "heatmap_pearson": true,
+    "heatmap_top5_jaccard": true,
+    "daily_level": false,
+    "dow_spearman": true,
+    "category_jaccard": true,
+    "category_spearman": true,
+    "ablation_full_beats_baseline": false,
+    "date_spot_checks": true,
+    "regressor_activation_all_nonzero": true
+  },
+  "heatmap": {
+    "pearson": 0.9839322457103566,
+    "peak_predicted": "Thursday 22:00",
+    "peak_real": "Friday 21:00",
+    "peak_match": false,
+    "peak_match_str": "pred=Thursday 22:00 | real=Friday 21:00",
+    "top5_predicted": [
+      "Friday 21:00",
+      "Friday 22:00",
+      "Thursday 21:00",
+      "Thursday 22:00",
+      "Wednesday 21:00"
+    ],
+    "top5_real": [
+      "Friday 21:00",
+      "Friday 22:00",
+      "Thursday 21:00",
+      "Thursday 22:00",
+      "Wednesday 21:00"
+    ],
+    "top5_jaccard": 1.0,
+    "diff_png": "/Users/haneenal-dossari/Projects/gp-restaurant-system/backend/eval/forecast_validation_heatmap_diff.png"
+  },
+  "daily_level": {
+    "real_mean": 288.09375,
+    "forecast_mean": 212.66194138738277,
+    "ratio": 0.7381692292435458,
+    "deviation_pct": 26.18307707564542,
+    "passed": false,
+    "trailing_window_start": "2022-11-02",
+    "trailing_window_end": "2022-12-27",
+    "horizon_start": "2022-12-28",
+    "horizon_end": "2023-01-26"
+  },
+  "dow_revenue": {
+    "predicted_per_occurrence": {
+      "Monday": 2892.96,
+      "Tuesday": 3238.75,
+      "Wednesday": 3169.44,
+      "Thursday": 3650.77,
+      "Friday": 3867.01,
+      "Saturday": 3616.87,
+      "Sunday": 3259.81
+    },
+    "real_per_occurrence": {
+      "Monday": 2797.86,
+      "Tuesday": 3062.8,
+      "Wednesday": 2890.23,
+      "Thursday": 3439.93,
+      "Friday": 4167.93,
+      "Saturday": 3696.6,
+      "Sunday": 3139.66
+    },
+    "predicted_rank": {
+      "Monday": 7,
+      "Tuesday": 5,
+      "Wednesday": 6,
+      "Thursday": 2,
+      "Friday": 1,
+      "Saturday": 3,
+      "Sunday": 4
+    },
+    "real_rank": {
+      "Monday": 7,
+      "Tuesday": 5,
+      "Wednesday": 6,
+      "Thursday": 3,
+      "Friday": 1,
+      "Saturday": 2,
+      "Sunday": 4
+    },
+    "spearman": 0.9642857142857145,
+    "top2_predicted": [
+      "Friday",
+      "Thursday"
+    ],
+    "top2_real": [
+      "Friday",
+      "Saturday"
+    ],
+    "top2_match": false,
+    "passed": false,
+    "passed_spearman": true
+  },
+  "categories": {
+    "predicted_revenue": {
+      "Espresso Drinks": 22412.16,
+      "Sweets": 18202.75,
+      "Hot Sweets": 16901.09,
+      "Hot Drinks": 15179.54,
+      "Cold Coffee Drinks": 13070.33,
+      "Dripp Coffee Drinks": 7183.41,
+      "Cold Drinks": 6210.94,
+      "Bakery": 2442.46
+    },
+    "real_revenue_recent_window": {
+      "Espresso Drinks": 30365.0,
+      "Sweets": 26520.13,
+      "Hot Sweets": 24835.0,
+      "Cold Coffee Drinks": 21293.0,
+      "Hot Drinks": 19819.0,
+      "Dripp Coffee Drinks": 9213.0,
+      "Cold Drinks": 7991.0,
+      "Bakery": 3331.0
+    },
+    "spearman": 0.9761904761904763,
+    "top3_predicted": [
+      "Espresso Drinks",
+      "Hot Sweets",
+      "Sweets"
+    ],
+    "top3_real": [
+      "Espresso Drinks",
+      "Hot Sweets",
+      "Sweets"
+    ],
+    "top3_jaccard": 1.0,
+    "passed_jaccard": true,
+    "passed_spearman": true,
+    "passed": true
+  },
+  "regressor_activation": {
+    "nonzero": {
+      "trend": true,
+      "weekly": true,
+      "holidays": true,
+      "temp_max": true,
+      "season_Winter": true,
+      "season_Spring": true,
+      "season_Summer": true,
+      "season_Autumn": true
+    },
+    "spot_eid_holidays": {
+      "2022-05-01": 36.620081928,
+      "2022-05-02": 54.18956619
+    },
+    "spot_payday_holidays": {
+      "2022-04-27": -72.47835242999999,
+      "2022-04-30": -78.322726872,
+      "2022-05-03": 60.418359828,
+      "2022-05-27": 21.46943241,
+      "2022-06-01": 29.728256652
+    },
+    "weekly_by_dow": {
+      "Friday": 39.726,
+      "Monday": -32.911,
+      "Saturday": 28.511,
+      "Sunday": -9.797,
+      "Thursday": 7.876,
+      "Tuesday": -16.078,
+      "Wednesday": -17.328
+    },
+    "weekly_peak_dow": "Friday",
+    "temp_max_std": 29.010859833648766,
+    "checks": {
+      "all_regressors_nonzero": true,
+      "eid_holidays_negative": false,
+      "payday_holidays_positive": false,
+      "temp_max_has_variance": true,
+      "weekly_peaks_friday": true
+    }
+  },
+  "ablation": {
+    "train_end": "2022-11-30",
+    "horizon_days": 28,
+    "results": {
+      "full": {
+        "mae": 119.93801556755618,
+        "wape": 39.568993405718686,
+        "n_real_days": 27
+      },
+      "no_holidays": {
+        "mae": 122.00975903684018,
+        "wape": 40.252486485761054,
+        "n_real_days": 27
+      },
+      "no_weather": {
+        "mae": 119.6005509061045,
+        "wape": 39.45765975641278,
+        "n_real_days": 27
+      },
+      "no_seasons": {
+        "mae": 116.40317220242358,
+        "wape": 38.40280607851218,
+        "n_real_days": 27
+      },
+      "baseline_naive_dow": {
+        "mae": 116.4830610338868,
+        "wape": 38.4291623645521,
+        "n_real_days": 27
+      }
+    },
+    "impact": {
+      "no_holidays": {
+        "ablated_mae": 122.00975903684018,
+        "delta_pct_vs_full": 1.73,
+        "moves_mae_5pct_or_more": false
+      },
+      "no_weather": {
+        "ablated_mae": 119.6005509061045,
+        "delta_pct_vs_full": -0.28,
+        "moves_mae_5pct_or_more": false
+      },
+      "no_seasons": {
+        "ablated_mae": 116.40317220242358,
+        "delta_pct_vs_full": -2.95,
+        "moves_mae_5pct_or_more": false
+      }
+    },
+    "passed": false,
+    "full_beats_baseline": false
+  },
+  "date_spot": {
+    "rows": [
+      {
+        "date": "2022-07-27",
+        "occasion_actual": "Payday",
+        "occasion_expected_contains": "Payday",
+        "occasion_ok": true,
+        "is_payday_actual": true,
+        "is_payday_expected": true,
+        "is_payday_ok": true,
+        "note": "payday anchor \u2014 clean (no Ramadan/Eid overlap)"
+      },
+      {
+        "date": "2022-05-02",
+        "occasion_actual": "Eid al-Fitr",
+        "occasion_expected_contains": "Eid al-Fitr",
+        "occasion_ok": true,
+        "is_payday_actual": true,
+        "is_payday_expected": true,
+        "is_payday_ok": true,
+        "note": "Eid al-Fitr day 1 (Hijri 10/1) \u2014 also day 2 \u2192 payday window"
+      },
+      {
+        "date": "2022-04-15",
+        "occasion_actual": "Ramadan",
+        "occasion_expected_contains": "Ramadan",
+        "occasion_ok": true,
+        "is_payday_actual": false,
+        "is_payday_expected": false,
+        "is_payday_ok": true,
+        "note": "mid-Ramadan weekday"
+      },
+      {
+        "date": "2022-09-23",
+        "occasion_actual": "Saudi National Day",
+        "occasion_expected_contains": "National Day",
+        "occasion_ok": true,
+        "is_payday_actual": false,
+        "is_payday_expected": false,
+        "is_payday_ok": true,
+        "note": "Saudi National Day"
+      },
+      {
+        "date": "2022-02-22",
+        "occasion_actual": "Saudi Founding Day",
+        "occasion_expected_contains": "Founding",
+        "occasion_ok": true,
+        "is_payday_actual": false,
+        "is_payday_expected": false,
+        "is_payday_ok": true,
+        "note": "Saudi Founding Day"
+      },
+      {
+        "date": "2022-08-15",
+        "occasion_actual": "Normal Day",
+        "occasion_expected_contains": "Normal",
+        "occasion_ok": true,
+        "is_payday_actual": false,
+        "is_payday_expected": false,
+        "is_payday_ok": true,
+        "note": "ordinary Monday \u2014 no holiday, not payday"
+      },
+      {
+        "date": "2022-07-09",
+        "occasion_actual": "Eid al-Adha",
+        "occasion_expected_contains": "Eid al-Adha",
+        "occasion_ok": true,
+        "is_payday_actual": false,
+        "is_payday_expected": false,
+        "is_payday_ok": true,
+        "note": "Eid al-Adha day 1 (Hijri 12/10)"
+      },
+      {
+        "date": "2022-05-30",
+        "occasion_actual": "Post-payday spending",
+        "occasion_expected_contains": "Post-payday",
+        "occasion_ok": true,
+        "is_payday_actual": true,
+        "is_payday_expected": true,
+        "is_payday_ok": true,
+        "note": "payday-window late tail (day 30)"
+      }
+    ],
+    "passed": true
+  },
+  "component_sample_md": "| ds | trend | weekly | holidays | temp_max | season_Winter | season_Spring | season_Summer | season_Autumn |\n|---|---|---|---|---|---|---|---|---|\n| 2022-04-15 | 205.525 | 39.726 | -83.483 | 0.282 | 0.0 | -19.077 | 0.0 | 0.0 |\n| 2022-05-01 | 205.525 | -9.797 | 36.62 | 13.602 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-05-02 | 205.525 | -32.911 | 54.19 | 5.238 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-05-04 | 205.525 | -17.328 | 83.158 | 19.177 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-04-27 | 205.525 | -17.328 | -72.478 | 4.309 | 0.0 | -19.077 | 0.0 | 0.0 |\n| 2022-05-03 | 205.525 | -16.078 | 60.418 | 7.407 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-07-10 | 205.525 | -9.797 | 191.568 | 25.992 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-09-23 | 205.525 | 39.726 | 87.71 | 17.319 | 0.0 | 0.0 | -37.287 | 0.0 |\n| 2022-10-12 | 205.525 | -17.328 | 0.0 | 5.238 | 0.0 | 0.0 | 0.0 | 3.401 |\n| 2022-12-23 | 205.525 | 39.726 | 0.0 | -31.932 | 51.893 | 0.0 | 0.0 | 0.0 |",
+  "verdict": "Prophet (full) does NOT beat the naive-DOW baseline (MAE 119.9 vs 116.5) \u2014 the regressor stack isn't earning its keep on this fold. Regressors whose removal does NOT move MAE by \u22655% on this fold: no_holidays, no_weather, no_seasons \u2014 they may still contribute to *interpretability* (holiday/season callouts in the UI) but they aren't earning the forecast MAE they cost. On the user-facing surfaces the picture is mixed: the heatmap correlates with real-day shape at r=0.98 (top-5 cells identical to the historical busy windows), the DOW revenue ranking matches at Spearman \u03c1=0.96, and the top-3 category overlap is Jaccard=1.00 \u2014 shape-of-the-week and product-mix surfaces are trustworthy. The level surface is not: the next-30-day daily mean lands 26.2% below the trailing 8-week real mean, because Prophet runs with `growth='flat'` and reverts to a single intercept (~205 units) while the trailing 8 weeks contain the December surge (~288 units). Managers reading the absolute daily numbers will see lower forecasts than recent weeks would suggest; the dashboard's `_bake_baseline_scale` step in `routes_forecast.py` exists precisely to mask this gap, so the raw model deviation here is louder than the user-visible deviation."
+}

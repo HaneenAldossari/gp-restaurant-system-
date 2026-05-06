@@ -628,6 +628,18 @@ def _forecast_heatmap(user_id: int, df_future: pd.DataFrame) -> tuple[list[dict]
     # day averages the manager already knows.
     fut = df_future.copy()
     fut["day_name"] = pd.to_datetime(fut["ds"]).dt.day_name()
+    # Ramadan correction: Saudi cafes don't operate during fasting hours.
+    # Iftar lands ~6-7 PM, so morning + afternoon time periods are
+    # closed throughout the holy month. Without this, the heatmap
+    # smeared morning hour shares (built from non-Ramadan history)
+    # onto Ramadan forecast days and made it look like Mar 1-19, 2026
+    # had 6 AM - 6 PM activity.
+    fut["__occasion"] = pd.to_datetime(fut["ds"]).apply(compute_occasion)
+    ramadan_closed = (
+        (fut["__occasion"] == "Ramadan")
+        & fut["time_period"].isin(["morning", "Afternoon"])
+    )
+    fut.loc[ramadan_closed, "yhat"] = 0
     occur = (
         fut.groupby("day_name")["ds"].nunique().rename("n_occur").reset_index()
     )
