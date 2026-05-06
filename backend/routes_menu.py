@@ -524,6 +524,15 @@ def _cost_lowering_suggestion(
     pop = (current_qty / (other_qty + current_qty) * 100) if (other_qty + current_qty) > 0 else 0
     new_classification = _classify(pop, new_margin, avg_pop, avg_margin)
 
+    # Also evaluate "cost-only" scenario — keep CURRENT price, just
+    # lower cost. Reviewer flagged that the system was implying both
+    # moves were needed for the classification flip when often the
+    # cost reduction ALONE is sufficient. Surfacing this lets the
+    # manager pick one lever or both transparently.
+    margin_at_current_price = (current_price - suggested) / current_price * 100
+    classification_at_current_price = _classify(pop, margin_at_current_price, avg_pop, avg_margin)
+    flips_at_current_price = classification_at_current_price != current_classification
+
     # Profit lift = savings per unit × historical units sold (current
     # price scenario). For the suggested-price scenario, qty would be
     # different per elasticity, but the cost-saving lift stays the
@@ -555,6 +564,11 @@ def _cost_lowering_suggestion(
         "currentClassification": current_classification,
         "newClassification": new_classification,
         "movesClassification": moves_class,
+        # NEW: lets the frontend tell the manager whether
+        # the cost reduction alone (no price change) is sufficient
+        # for the classification flip.
+        "flipsAtCurrentPrice": flips_at_current_price,
+        "classificationAtCurrentPrice": classification_at_current_price,
         "rationale": rationale,
     }
 
