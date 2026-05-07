@@ -547,7 +547,7 @@ def _optimal_price(
                 "demotionPrice": round(demotion_price, 2),
                 "demotedTo": "Plowhorse",
                 "rationale": (
-                    "This is a Hero item — high sales and healthy margin. The math "
+                    "This is a Star item — high popularity and healthy margin. The math "
                     "shows a small price cut could lift short-term profit, but it "
                     "would push the margin below the menu average and demote this "
                     "item out of Hero status. Hold the price. If you need more "
