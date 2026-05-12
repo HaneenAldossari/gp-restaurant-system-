@@ -8,6 +8,11 @@ from data_loader_db import load_data, filter_data
 router = APIRouter(tags=["Menu Engineering"])
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — Menu Engineering endpoint (Slide 24)
+# Returns each product's Boston Matrix classification + quadrant counts.
+# Consumed by: frontend MenuEngineering.jsx
+# ═══════════════════════════════════════════════════════════════════════
 @router.get("/api/menu-engineering")
 def menu_engineering(
     start_date: str | None = Query(None),
@@ -60,6 +65,12 @@ def menu_engineering(
     avg_margin = float(items["profitMargin"].mean())
     pop_cutoff = 0.7 * avg_pop_raw
 
+    # ═══════════════════════════════════════════════════════════════════
+    # CONCEPT — Boston Matrix classification (Slide 24)
+    # Each product → Star / Plowhorse / Puzzle / Dog
+    # High popularity = pop ≥ 0.7 × mean (Kasavana–Smith, 1982)
+    # High margin     = margin ≥ mean margin
+    # ═══════════════════════════════════════════════════════════════════
     def classify(row):
         hi_pop = row["popularity"] >= pop_cutoff
         hi_mar = row["profitMargin"] >= avg_margin
@@ -111,6 +122,12 @@ def menu_engineering(
 #
 # Keys are lowercased. Lookup order: exact match → partial keyword match →
 # fallback DEFAULT_ELASTICITY.
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — Elasticity table by category (Slide 32, right column)
+# Values from hospitality industry research: habit goods (coffee, tea) are
+# inelastic (~−0.4 to −0.7); discretionary items (sweets, desserts) are
+# highly elastic (~−1.6 to −2.0). Used by the What-If Price Simulator.
+# ═══════════════════════════════════════════════════════════════════════
 ELASTICITY_BY_CATEGORY: dict[str, float] = {
     # --- Hot & specialty coffee (inelastic — habit-driven) ---
     "espresso drinks": -0.5, "espresso": -0.5, "specialty coffee": -0.5, "coffee": -0.5,
@@ -260,6 +277,11 @@ def _cost_reduction_cap_for(category: str | None) -> float:
     return DEFAULT_COST_REDUCTION_CAP
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — Elasticity lookup with fallback chain
+# Exact category match → partial keyword match → DEFAULT_ELASTICITY (−1.5)
+# Returns both the value AND a human-readable trace of which rule matched.
+# ═══════════════════════════════════════════════════════════════════════
 def _elasticity_for(category: str | None) -> tuple[float, str]:
     """
     Return (elasticity, human_readable_source) for the given category name.
@@ -287,6 +309,13 @@ def _classify(popularity: float, margin: float, avg_pop: float, avg_margin: floa
     return "Dog"
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — Constant-elasticity demand formula (Slide 32)
+#     Q₁ = Q₀ × (P₁ / P₀)^e
+# Given a price change from P₀ to P₁ and the category's elasticity e,
+# returns the projected new demand Q₁. Float version — used for profit
+# math; the integer wrapper below is display-only.
+# ═══════════════════════════════════════════════════════════════════════
 def _project_qty_float(current_qty: int, current_price: float, new_price: float, elasticity: float) -> float:
     """
     Constant-elasticity demand as a smooth (unrounded) value.
@@ -331,6 +360,14 @@ def _simulate_one(
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — Optimal-price suggestion / Lerner Index (Slide 32)
+#     P* = e × c / (1 + e)
+# Suggests a price that maximises profit, given cost c and elasticity e.
+# Surrounded by safety logic: Boston Matrix overrides for Dog/Puzzle,
+# inelastic-case fallback, ±20 % cap from current price, and a Star-
+# protection rule. The pure formula itself is one line (see inline anchor).
+# ═══════════════════════════════════════════════════════════════════════
 def _optimal_price(
     cost: float,
     elasticity: float,
@@ -493,6 +530,7 @@ def _optimal_price(
             "inelastic": True,
         }
 
+    # CONCEPT — Lerner Index, the actual mathematical core: P* = e·c / (1+e)
     theoretical = elasticity * cost / (1 + elasticity)
     safe_max = current_price * (1 + SAFE_UP_CAP)
     safe_min = current_price * (1 - SAFE_DOWN_CAP)
@@ -778,6 +816,12 @@ def _cost_defense(
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# CONCEPT — What-If Price Simulator API endpoint (Slide 32)
+# Called from the MenuEngineering.jsx simulator panel. Takes a candidate
+# price, runs the constant-elasticity demand math, and returns projected
+# revenue, profit, margin, and the item's new Boston Matrix quadrant.
+# ═══════════════════════════════════════════════════════════════════════
 @router.get("/api/menu-engineering/simulate", summary="What-If price simulation")
 def simulate_price_change(
     target: str = Query(..., description="Product name (exact match)"),
