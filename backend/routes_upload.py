@@ -337,6 +337,7 @@ async def upload_file(
     content = await file.read()
 
     try:
+        # We accept both CSV and Excel files using pandas
         if ext == ".csv":
             df = pd.read_csv(io.BytesIO(content))
         else:
@@ -346,7 +347,7 @@ async def upload_file(
 
     df.columns = [str(c).strip() for c in df.columns]
     original_cols = list(df.columns)
-
+# possible name for the same column
     col_order_ref = _pick_col(df, ["order_reference", "order_id", "order_ref", "Order ID"])
     col_sku = _pick_col(df, ["sku", "SKU", "product_sku"])
     col_qty = _pick_col(df, ["quantity", "qty", "Quantity"])
@@ -406,17 +407,18 @@ async def upload_file(
         return v is None or (isinstance(v, str) and v.strip().lower() in ("", "nan", "none", "null"))
 
     enriched_counts = {"time_period": 0, "season": 0, "occasion": 0}
-
+    # Time Period
+#make sure not empty or missing data
     if col_time_period is None or norm["time_period"].apply(_is_blank).any():
-        mask = norm["time_period"].apply(_is_blank) if col_time_period else pd.Series(True, index=norm.index)
-        norm.loc[mask, "time_period"] = norm.loc[mask, "order_datetime"].dt.hour.apply(_bucket_time_period)
+        mask = norm["time_period"].apply(_is_blank) if col_time_period else pd.Series(True, index=norm.index) 
+        norm.loc[mask, "time_period"] = norm.loc[mask, "order_datetime"].dt.hour.apply(_bucket_time_period) 
         enriched_counts["time_period"] = int(mask.sum())
-
+#Season
     if col_season is None or norm["season"].apply(_is_blank).any():
         mask = norm["season"].apply(_is_blank) if col_season else pd.Series(True, index=norm.index)
         norm.loc[mask, "season"] = norm.loc[mask, "order_datetime"].apply(_compute_season)
         enriched_counts["season"] = int(mask.sum())
-
+#occasion
     if col_occasion is None or norm["occasion"].apply(_is_blank).any():
         mask = norm["occasion"].apply(_is_blank) if col_occasion else pd.Series(True, index=norm.index)
         norm.loc[mask, "occasion"] = norm.loc[mask, "order_datetime"].apply(_compute_occasion)
