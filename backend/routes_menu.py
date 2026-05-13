@@ -62,8 +62,8 @@ def menu_engineering(
     # is bounded [0, 100 %], symmetrically distributed in a typical
     # menu, and the mean is the right anchor there.
     avg_pop_raw = float(items["popularity"].mean())
-    avg_margin = float(items["profitMargin"].mean())
-    pop_cutoff = 0.7 * avg_pop_raw
+    avg_margin = float(items["profitMargin"].mean())   # CONCEPT: margin threshold (mean across menu)
+    pop_cutoff = 0.7 * avg_pop_raw                      # CONCEPT: Kasavana-Smith popularity threshold (0.7 × mean)
 
     # ═══════════════════════════════════════════════════════════════════
     # CONCEPT — Boston Matrix classification (Slide 24)
